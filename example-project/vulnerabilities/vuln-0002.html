@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en" data-kind="vuln">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>finding vuln-0002</title>
+<link rel="stylesheet" href="../assets/retro.css">
+</head>
+<body>
+<div class="crt">
+<header class="topbar"><a class="home" href="../index.html">▣ ASSESSMENT NOTEBOOK</a><span class="crumb">finding vuln-0002</span></header>
+<main>
+<section class="panel"><h2 class="panel-title">FINDING // vuln-0002</h2><div class="panel-body"><table class="kv"><tr><th>Title</th><td>Session cookie missing Secure attribute</td></tr><tr><th>Severity</th><td><span class="sev sev-low">LOW</span></td></tr><tr><th>Status</th><td>Open</td></tr><tr><th>Affected URL</th><td><a href="https://portal.acme.test/login" rel="noreferrer">https://portal.acme.test/login</a></td></tr><tr><th>Component</th><td>—</td></tr></table></div></section><section class="panel"><h2 class="panel-title">DESCRIPTION</h2><div class="panel-body"><p class="prose">The session cookie is issued without the Secure attribute.</p></div></section><section class="panel"><h2 class="panel-title">REMEDIATION</h2><div class="panel-body"><p class="prose">Set the Secure and HttpOnly attributes on session cookies.</p></div></section><section class="panel"><h2 class="panel-title">RELATED COMPONENTS</h2><div class="panel-body"><ul class="plain"><li>affects → <a href="../pages/page-0002.html">page-0002</a></li></ul></div></section>
+</main>
+<footer class="botbar"><span>Acme Portal — sample assessment</span><span class="scan"></span></footer>
+</div>
+<script src="../assets/highlight.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

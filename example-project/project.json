@@ -1,0 +1,859 @@
+{
+  "schemaVersion": 1,
+  "name": "Acme Portal — sample assessment",
+  "createdAt": "2026-09-23 17:44:32",
+  "updatedAt": "2026-09-23 17:44:33",
+  "target": {
+    "domain": "portal.acme.test",
+    "mainUrl": "https://portal.acme.test/",
+    "assessmentName": "Acme Portal web application assessment",
+    "assessmentDate": "2026-09-23",
+    "notes": "Scope: portal.acme.test only. Authorized, credentialed testing."
+  },
+  "technologies": [
+    {
+      "id": "tech-0001",
+      "category": "WEB_SERVER",
+      "name": "nginx",
+      "version": "1.25",
+      "evidence": "Server response header",
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "tech-0002",
+      "category": "LANGUAGE",
+      "name": "PHP",
+      "version": "8.2",
+      "evidence": "X-Powered-By header",
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "tech-0003",
+      "category": "FRAMEWORK",
+      "name": "Laravel",
+      "version": "10",
+      "evidence": "XSRF-TOKEN cookie",
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "tech-0004",
+      "category": "JS_FRAMEWORK",
+      "name": "Vue.js",
+      "version": "3",
+      "evidence": "app.js bundle",
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "tech-0005",
+      "category": "DATABASE",
+      "name": "MySQL",
+      "version": "",
+      "evidence": "error message on /search",
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "tech-0006",
+      "category": "AUTHENTICATION",
+      "name": "Session cookie + CSRF token",
+      "version": "",
+      "evidence": "login form + Set-Cookie",
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    }
+  ],
+  "pages": [
+    {
+      "id": "page-0001",
+      "url": "https://portal.acme.test/",
+      "title": "Acme Portal",
+      "method": "GET",
+      "statusCode": 200,
+      "contentType": "text/html",
+      "discoverySource": "direct navigation",
+      "firstSeen": "2026-09-23 17:44:32",
+      "lastSeen": "2026-09-23 17:44:32",
+      "formIds": [],
+      "linkIds": [
+        "link-0001",
+        "link-0002"
+      ],
+      "resourceIds": [
+        "res-0001",
+        "res-0002"
+      ],
+      "screenshotIds": [],
+      "interactionIds": [],
+      "sourceFiles": [
+        "source/page-0001-index.html"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "page-0002",
+      "url": "https://portal.acme.test/login",
+      "title": "Sign in",
+      "method": "GET",
+      "statusCode": 200,
+      "contentType": "text/html",
+      "discoverySource": "linked from home",
+      "firstSeen": "2026-09-23 17:44:32",
+      "lastSeen": "2026-09-23 17:44:32",
+      "formIds": [
+        "form-0001"
+      ],
+      "linkIds": [
+        "link-0003"
+      ],
+      "resourceIds": [],
+      "screenshotIds": [],
+      "interactionIds": [],
+      "sourceFiles": [
+        "source/page-0002-login.html"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "page-0003",
+      "url": "https://portal.acme.test/dashboard",
+      "title": "Dashboard",
+      "method": "GET",
+      "statusCode": 200,
+      "contentType": "text/html",
+      "discoverySource": "302 redirect from /session",
+      "firstSeen": "2026-09-23 17:44:32",
+      "lastSeen": "2026-09-23 17:44:32",
+      "formIds": [
+        "form-0002"
+      ],
+      "linkIds": [
+        "link-0004",
+        "link-0005",
+        "link-0006",
+        "link-0007"
+      ],
+      "resourceIds": [],
+      "screenshotIds": [
+        "shot-0001",
+        "shot-0002"
+      ],
+      "interactionIds": [
+        "act-0001"
+      ],
+      "sourceFiles": [
+        "source/page-0003-dashboard.html"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "page-0004",
+      "url": "https://portal.acme.test/dashboard/profile",
+      "title": "Profile",
+      "method": "GET",
+      "statusCode": 200,
+      "contentType": "text/html",
+      "discoverySource": "linked from dashboard",
+      "firstSeen": "2026-09-23 17:44:32",
+      "lastSeen": "2026-09-23 17:44:32",
+      "formIds": [
+        "form-0003"
+      ],
+      "linkIds": [
+        "link-0008"
+      ],
+      "resourceIds": [],
+      "screenshotIds": [],
+      "interactionIds": [],
+      "sourceFiles": [
+        "source/page-0004-profile.html"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "page-0005",
+      "url": "https://portal.acme.test/search?q=test",
+      "title": "Search",
+      "method": "GET",
+      "statusCode": 200,
+      "contentType": "text/html",
+      "discoverySource": "search form submission",
+      "firstSeen": "2026-09-23 17:44:33",
+      "lastSeen": "2026-09-23 17:44:33",
+      "formIds": [],
+      "linkIds": [],
+      "resourceIds": [],
+      "screenshotIds": [],
+      "interactionIds": [],
+      "sourceFiles": [
+        "source/page-0005-search.html"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "page-0006",
+      "url": "https://portal.acme.test/api/users",
+      "title": "",
+      "method": "GET",
+      "statusCode": 200,
+      "contentType": "application/json",
+      "discoverySource": "observed XHR from dashboard",
+      "firstSeen": "2026-09-23 17:44:33",
+      "lastSeen": "2026-09-23 17:44:33",
+      "formIds": [],
+      "linkIds": [],
+      "resourceIds": [],
+      "screenshotIds": [],
+      "interactionIds": [],
+      "sourceFiles": [
+        "source/page-0006-users.html"
+      ],
+      "notes": ""
+    }
+  ],
+  "resources": [
+    {
+      "id": "res-0001",
+      "type": "SCRIPT",
+      "url": "https://portal.acme.test/js/app.js",
+      "sourceFile": null,
+      "pageIds": [
+        "page-0001"
+      ],
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "res-0002",
+      "type": "STYLESHEET",
+      "url": "https://portal.acme.test/css/app.css",
+      "sourceFile": null,
+      "pageIds": [
+        "page-0001"
+      ],
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    }
+  ],
+  "links": [
+    {
+      "id": "link-0001",
+      "sourcePageId": "page-0001",
+      "destinationUrl": "https://portal.acme.test/login",
+      "method": "GET",
+      "visibleText": "Sign in",
+      "elementType": "anchor",
+      "discoveryMethod": "page analysis",
+      "destinationPageId": "page-0002",
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "link-0002",
+      "sourcePageId": "page-0001",
+      "destinationUrl": "https://portal.acme.test/products",
+      "method": "GET",
+      "visibleText": "Products",
+      "elementType": "anchor",
+      "discoveryMethod": "page analysis",
+      "destinationPageId": null,
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "link-0003",
+      "sourcePageId": "page-0002",
+      "destinationUrl": "https://portal.acme.test/session",
+      "method": "POST",
+      "visibleText": "loginForm",
+      "elementType": "form-action",
+      "discoveryMethod": "page analysis",
+      "destinationPageId": null,
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "link-0004",
+      "sourcePageId": "page-0003",
+      "destinationUrl": "https://portal.acme.test/dashboard/profile",
+      "method": "GET",
+      "visibleText": "Profile",
+      "elementType": "anchor",
+      "discoveryMethod": "page analysis",
+      "destinationPageId": "page-0004",
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "link-0005",
+      "sourcePageId": "page-0003",
+      "destinationUrl": "https://portal.acme.test/dashboard/settings",
+      "method": "GET",
+      "visibleText": "Settings",
+      "elementType": "anchor",
+      "discoveryMethod": "page analysis",
+      "destinationPageId": null,
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "link-0006",
+      "sourcePageId": "page-0003",
+      "destinationUrl": "https://portal.acme.test/admin",
+      "method": "GET",
+      "visibleText": "Admin",
+      "elementType": "anchor",
+      "discoveryMethod": "page analysis",
+      "destinationPageId": null,
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "link-0007",
+      "sourcePageId": "page-0003",
+      "destinationUrl": "https://portal.acme.test/search",
+      "method": "GET",
+      "visibleText": "searchForm",
+      "elementType": "form-action",
+      "discoveryMethod": "page analysis",
+      "destinationPageId": null,
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "link-0008",
+      "sourcePageId": "page-0004",
+      "destinationUrl": "https://portal.acme.test/profile",
+      "method": "POST",
+      "visibleText": "(form submission)",
+      "elementType": "form-action",
+      "discoveryMethod": "page analysis",
+      "destinationPageId": null,
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    }
+  ],
+  "forms": [
+    {
+      "id": "form-0001",
+      "pageId": "page-0002",
+      "action": "https://portal.acme.test/session",
+      "method": "POST",
+      "encType": "",
+      "formIdentifier": "loginForm",
+      "locationOnPage": "",
+      "parameterIds": [
+        "param-0001",
+        "param-0002",
+        "param-0003"
+      ],
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "form-0002",
+      "pageId": "page-0003",
+      "action": "https://portal.acme.test/search",
+      "method": "GET",
+      "encType": "",
+      "formIdentifier": "searchForm",
+      "locationOnPage": "",
+      "parameterIds": [
+        "param-0004"
+      ],
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "form-0003",
+      "pageId": "page-0004",
+      "action": "https://portal.acme.test/profile",
+      "method": "POST",
+      "encType": "",
+      "formIdentifier": "",
+      "locationOnPage": "",
+      "parameterIds": [
+        "param-0005"
+      ],
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "param-0001",
+      "name": "email",
+      "inputType": "email",
+      "defaultValue": "",
+      "required": true,
+      "observedValues": [],
+      "purpose": "",
+      "reflections": [],
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "param-0002",
+      "name": "password",
+      "inputType": "password",
+      "defaultValue": "",
+      "required": true,
+      "observedValues": [],
+      "purpose": "",
+      "reflections": [],
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "param-0003",
+      "name": "_token",
+      "inputType": "hidden",
+      "defaultValue": "CSRF",
+      "required": false,
+      "observedValues": [],
+      "purpose": "",
+      "reflections": [],
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    },
+    {
+      "id": "param-0004",
+      "name": "q",
+      "inputType": "text",
+      "defaultValue": "",
+      "required": false,
+      "observedValues": [],
+      "purpose": "",
+      "reflections": [
+        {
+          "submittedValue": "ZZQCANARY",
+          "excerpt": "<html><body><p>Results for <b>ZZQCANARY</b></p></body></html>",
+          "context": "HTML_TEXT",
+          "location": "response body",
+          "notes": ""
+        }
+      ],
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:33"
+    },
+    {
+      "id": "param-0005",
+      "name": "display_name",
+      "inputType": "text",
+      "defaultValue": "juniper",
+      "required": false,
+      "observedValues": [],
+      "purpose": "",
+      "reflections": [],
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:32",
+      "updatedAt": "2026-09-23 17:44:32"
+    }
+  ],
+  "interactions": [
+    {
+      "id": "act-0001",
+      "pageId": "page-0003",
+      "action": "Clicked the account dropdown",
+      "observedBehavior": "A menu with Profile / Settings / Admin appeared",
+      "requestId": null,
+      "screenshotId": "shot-0002",
+      "notes": "",
+      "createdAt": "2026-09-23 17:44:33"
+    }
+  ],
+  "requests": [],
+  "responses": [],
+  "screenshots": [
+    {
+      "id": "shot-0001",
+      "pageId": "page-0003",
+      "imageFile": "screenshots/shot-page-0003-0.png",
+      "stateDescription": "Default page",
+      "sequence": 0,
+      "relatedInteractionId": null,
+      "relatedRequestId": null,
+      "timestamp": "2026-09-23 17:44:33",
+      "notes": ""
+    },
+    {
+      "id": "shot-0002",
+      "pageId": "page-0003",
+      "imageFile": "screenshots/shot-page-0003-1.png",
+      "stateDescription": "Account menu opened",
+      "sequence": 1,
+      "relatedInteractionId": "act-0001",
+      "relatedRequestId": null,
+      "timestamp": "2026-09-23 17:44:33",
+      "notes": ""
+    }
+  ],
+  "notes": [
+    {
+      "id": "note-0001",
+      "kind": "HYPOTHESIS",
+      "targetType": "PARAMETER",
+      "targetId": "param-0004",
+      "text": "q reflects unencoded into HTML text — probe for XSS.",
+      "createdAt": "2026-09-23 17:44:33",
+      "updatedAt": "2026-09-23 17:44:33"
+    },
+    {
+      "id": "note-0002",
+      "kind": "OBSERVATION",
+      "targetType": "PAGE",
+      "targetId": "page-0002",
+      "text": "Login sets a session cookie without the Secure flag over the test TLS endpoint.",
+      "createdAt": "2026-09-23 17:44:33",
+      "updatedAt": "2026-09-23 17:44:33"
+    },
+    {
+      "id": "note-0003",
+      "kind": "TODO",
+      "targetType": "PAGE",
+      "targetId": "page-0003",
+      "text": "Check whether /admin is reachable without the admin role.",
+      "createdAt": "2026-09-23 17:44:33",
+      "updatedAt": "2026-09-23 17:44:33"
+    }
+  ],
+  "vulnerabilities": [
+    {
+      "id": "vuln-0001",
+      "title": "Reflected XSS via search parameter q",
+      "severity": "HIGH",
+      "status": "CONFIRMED",
+      "affectedUrl": "https://portal.acme.test/search?q=test",
+      "affectedComponent": "search form, parameter q",
+      "description": "The q parameter is reflected into the HTML response without output encoding, allowing script injection.",
+      "technicalObservation": "A canary value appeared verbatim in HTML text context.",
+      "stepsToReproduce": "1. Submit q=<script>alert(1)</script> on /search.\n2. Observe the script executes in the response.",
+      "impact": "Session theft, actions performed as the victim.",
+      "remediation": "Context-aware output encoding; a strict Content-Security-Policy.",
+      "notes": "",
+      "screenshotIds": [],
+      "requestIds": [],
+      "createdAt": "2026-09-23 17:44:33",
+      "updatedAt": "2026-09-23 17:44:33"
+    },
+    {
+      "id": "vuln-0002",
+      "title": "Session cookie missing Secure attribute",
+      "severity": "LOW",
+      "status": "OPEN",
+      "affectedUrl": "https://portal.acme.test/login",
+      "affectedComponent": "",
+      "description": "The session cookie is issued without the Secure attribute.",
+      "technicalObservation": "",
+      "stepsToReproduce": "",
+      "impact": "",
+      "remediation": "Set the Secure and HttpOnly attributes on session cookies.",
+      "notes": "",
+      "screenshotIds": [],
+      "requestIds": [],
+      "createdAt": "2026-09-23 17:44:33",
+      "updatedAt": "2026-09-23 17:44:33"
+    }
+  ],
+  "relationships": [
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0001",
+      "toType": "LINK",
+      "toId": "link-0001",
+      "kind": "contains-link",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0001",
+      "toType": "LINK",
+      "toId": "link-0002",
+      "kind": "contains-link",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0001",
+      "toType": "RESOURCE",
+      "toId": "res-0001",
+      "kind": "loads-resource",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0001",
+      "toType": "RESOURCE",
+      "toId": "res-0002",
+      "kind": "loads-resource",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "FORM",
+      "fromId": "form-0001",
+      "toType": "PARAMETER",
+      "toId": "param-0001",
+      "kind": "has-parameter",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "FORM",
+      "fromId": "form-0001",
+      "toType": "PARAMETER",
+      "toId": "param-0002",
+      "kind": "has-parameter",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "FORM",
+      "fromId": "form-0001",
+      "toType": "PARAMETER",
+      "toId": "param-0003",
+      "kind": "has-parameter",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0002",
+      "toType": "FORM",
+      "toId": "form-0001",
+      "kind": "contains-form",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0002",
+      "toType": "LINK",
+      "toId": "link-0003",
+      "kind": "contains-link",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0001",
+      "toType": "PAGE",
+      "toId": "page-0002",
+      "kind": "discovered",
+      "detail": "linked from home",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0001",
+      "toType": "PAGE",
+      "toId": "page-0002",
+      "kind": "links-to",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "FORM",
+      "fromId": "form-0002",
+      "toType": "PARAMETER",
+      "toId": "param-0004",
+      "kind": "has-parameter",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0003",
+      "toType": "FORM",
+      "toId": "form-0002",
+      "kind": "contains-form",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0003",
+      "toType": "LINK",
+      "toId": "link-0004",
+      "kind": "contains-link",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0003",
+      "toType": "LINK",
+      "toId": "link-0005",
+      "kind": "contains-link",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0003",
+      "toType": "LINK",
+      "toId": "link-0006",
+      "kind": "contains-link",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0003",
+      "toType": "LINK",
+      "toId": "link-0007",
+      "kind": "contains-link",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0002",
+      "toType": "PAGE",
+      "toId": "page-0003",
+      "kind": "discovered",
+      "detail": "302 redirect from /session",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0002",
+      "toType": "PAGE",
+      "toId": "page-0003",
+      "kind": "redirects-to",
+      "detail": "302 after successful auth",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "FORM",
+      "fromId": "form-0003",
+      "toType": "PARAMETER",
+      "toId": "param-0005",
+      "kind": "has-parameter",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0004",
+      "toType": "FORM",
+      "toId": "form-0003",
+      "kind": "contains-form",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0004",
+      "toType": "LINK",
+      "toId": "link-0008",
+      "kind": "contains-link",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0003",
+      "toType": "PAGE",
+      "toId": "page-0004",
+      "kind": "discovered",
+      "detail": "linked from dashboard",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0003",
+      "toType": "PAGE",
+      "toId": "page-0004",
+      "kind": "links-to",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:32"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0003",
+      "toType": "PAGE",
+      "toId": "page-0005",
+      "kind": "discovered",
+      "detail": "search form submission",
+      "createdAt": "2026-09-23 17:44:33"
+    },
+    {
+      "fromType": "PAGE",
+      "fromId": "page-0003",
+      "toType": "PAGE",
+      "toId": "page-0006",
+      "kind": "discovered",
+      "detail": "observed XHR from dashboard",
+      "createdAt": "2026-09-23 17:44:33"
+    },
+    {
+      "fromType": "VULNERABILITY",
+      "fromId": "vuln-0001",
+      "toType": "PAGE",
+      "toId": "page-0005",
+      "kind": "affects",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:33"
+    },
+    {
+      "fromType": "VULNERABILITY",
+      "fromId": "vuln-0001",
+      "toType": "PARAMETER",
+      "toId": "param-0004",
+      "kind": "affects",
+      "detail": "reflected parameter",
+      "createdAt": "2026-09-23 17:44:33"
+    },
+    {
+      "fromType": "VULNERABILITY",
+      "fromId": "vuln-0002",
+      "toType": "PAGE",
+      "toId": "page-0002",
+      "kind": "affects",
+      "detail": "",
+      "createdAt": "2026-09-23 17:44:33"
+    }
+  ],
+  "idCounters": {
+    "tech": 6,
+    "res": 2,
+    "note": 3,
+    "act": 1,
+    "form": 3,
+    "param": 5,
+    "vuln": 2,
+    "link": 8,
+    "page": 6,
+    "shot": 2
+  }
+}

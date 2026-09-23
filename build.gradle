@@ -1,0 +1,63 @@
+// Build for the Assessment Notebook Burp extension.
+//
+//   gradle shadowJar         -> build/libs/assessment-notebook-<version>-all.jar
+//                               (the single jar you load into Burp)
+//   gradle test              -> run the JUnit 5 suite
+//   gradle generateExample   -> (re)build ./example-project from the real code
+//
+// Montoya is compileOnly: Burp provides it at runtime. Gson and jsoup are
+// bundled into the shadow jar because Burp does not provide them.
+
+plugins {
+    id 'java'
+    // Fat-jar plugin. Uses the maintained fork coordinates.
+    id 'com.gradleup.shadow' version '8.3.5'
+}
+
+group = 'com.assessmentnotebook'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly 'net.portswigger.burp.extensions:montoya-api:2025.5'
+
+    implementation 'com.google.code.gson:gson:2.11.0'
+    implementation 'org.jsoup:jsoup:1.18.1'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging { events 'passed', 'skipped', 'failed' }
+}
+
+// Build the sample project directory using the packaged code.
+tasks.register('generateExample', JavaExec) {
+    group = 'documentation'
+    description = 'Generate ./example-project from the real model + generator.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.assessmentnotebook.example.ExampleProjectGenerator'
+    args 'example-project'
+}
+
+shadowJar {
+    archiveClassifier = 'all'
+    // Keep the Montoya ServiceLoader descriptor and merge any service files.
+    mergeServiceFiles()
+}
+
+// Make `gradle build` produce the loadable fat jar.
+tasks.named('build') {
+    dependsOn tasks.named('shadowJar')
+}

@@ -1,0 +1,15 @@
+# Build output
+build/
+.gradle/
+out/
+
+# Fetched dependency jars (restore with scripts/fetch-deps.sh or Gradle)
+lib/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
