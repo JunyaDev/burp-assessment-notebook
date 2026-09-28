@@ -1,3 +1,37 @@
+## Assessment Notebook v1.2.0
+
+New capability for driving assessments through the Burp GUI, plus a JavaScript
+scanner. Builds on the v1.1 interactive upgrade.
+
+### Install
+1. Download `assessment-notebook-v1.2.0.jar` below.
+2. Burp Suite Professional -> **Extensions -> Add** -> Extension type: **Java** ->
+   select the jar.
+3. Open the **Assessment Notebook** tab.
+
+### New in 1.2.0
+- **JavaScript scanner.** Right-click a JS response -> *Scan JS for interesting
+  data* to surface endpoints, secrets/tokens, dangerous calls (eval/exec/…),
+  exported functions and bypass/debug flags. Works on compiled Flutter
+  `main.dart.js`. Selected findings attach to the script and are listed on every
+  page that loads it.
+- **JSON/XHR parameters.** A JSON request body is documented as a form, so its
+  fields become parameters that probes attach to and render against.
+- **SQL-injection probes.** An opt-in probe group (`'`, `''`, `'--`, `'#`,
+  `' OR '1'='1`, `' OR 1=1--`) with SQL-error-signature detection that flags a
+  provoked database error as a potential issue.
+- **Fuller finding capture.** The Create Vulnerability dialog now takes status,
+  component, description, technical observation, steps, impact, remediation and
+  notes.
+- **More visible evidence.** Pages now list the findings that affect them, the
+  parameter tests run against them, and the captured bodies of their variants.
+- **Angular detection** from the `<app-root>` shell, and **opt-in capture of
+  resource bodies** at page registration.
+
+Test suite grew from 59 to 76.
+
+---
+
 ## Assessment Notebook v1.0.0
 
 A Burp Suite Professional extension (Montoya API, Java 17) that turns an
