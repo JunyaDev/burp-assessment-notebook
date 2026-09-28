@@ -9,7 +9,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -30,10 +33,34 @@ public final class HtmlGenerator {
     private final ProjectLayout layout;
     private final AppGraph graph;
 
+    // Per-generation indexes so building a document costs its own size, not
+    // the size of the whole project (see the per-page lists below).
+    private final Map<String, List<Link>> linksByPage = new HashMap<>();
+    private final Map<String, List<Screenshot>> screenshotsByPage = new HashMap<>();
+    private final Map<String, List<Interaction>> interactionsByPage = new HashMap<>();
+    private final Map<String, List<PageVariant>> variantsByPage = new HashMap<>();
+    private final Map<String, List<ParameterTest>> testsByParameter = new HashMap<>();
+    private final Map<String, List<Note>> notesByTarget = new HashMap<>();
+
     public HtmlGenerator(Project project, ProjectLayout layout) {
         this.project = project;
         this.layout = layout;
         this.graph = new AppGraph(project);
+        for (Link l : project.links) group(linksByPage, l.sourcePageId, l);
+        for (Screenshot s : project.screenshots) group(screenshotsByPage, s.pageId, s);
+        for (Interaction a : project.interactions) group(interactionsByPage, a.pageId, a);
+        for (PageVariant v : project.variants) group(variantsByPage, v.pageId, v);
+        for (ParameterTest t : project.parameterTests) group(testsByParameter, t.parameterId, t);
+        for (Note n : project.notes) group(notesByTarget, n.targetType + ":" + n.targetId, n);
+    }
+
+    private static <T> void group(Map<String, List<T>> m, String key, T value) {
+        if (key == null) return;
+        m.computeIfAbsent(key, k -> new ArrayList<>()).add(value);
+    }
+
+    private static <T> List<T> of(Map<String, List<T>> m, String key) {
+        return key == null ? List.of() : m.getOrDefault(key, List.of());
     }
 
     /** Regenerate every document and copy the shared assets. */
@@ -53,10 +80,67 @@ public final class HtmlGenerator {
             write(layout.vulnerabilities().resolve(v.id + ".html"), buildVulnerability(v));
         }
         for (Resource r : project.resources) {
-            Path dir = isCodeResource(r) ? layout.scripts() : layout.files();
-            write(dir.resolve(r.id + ".html"), buildResource(r));
+            write(resourceDir(r).resolve(r.id + ".html"), buildResource(r));
         }
+        generateLinksIndex();
+        generateWordlistsIndex();
+    }
+
+    // ---- partial regeneration ----------------------------------------------
+    // Each method rewrites exactly one document from the current model. The
+    // controller uses them for edits that cannot change the application
+    // structure, so a large project does not pay for a full rebuild each time.
+
+    public void generateIndex() throws IOException {
+        write(layout.indexHtml(), buildIndex());
+    }
+
+    public void generatePage(String pageId) throws IOException {
+        Page p = project.findPage(pageId);
+        if (p != null) write(layout.pages().resolve(p.id + ".html"), buildPage(p));
+    }
+
+    public void generateForm(String formId) throws IOException {
+        Form f = project.findForm(formId);
+        if (f != null) write(layout.forms().resolve(f.id + ".html"), buildForm(f));
+    }
+
+    public void generateVulnerability(String vulnId) throws IOException {
+        Vulnerability v = project.findVulnerability(vulnId);
+        if (v != null) {
+            write(layout.vulnerabilities().resolve(v.id + ".html"), buildVulnerability(v));
+        }
+    }
+
+    public void generateResource(String resourceId) throws IOException {
+        Resource r = project.findResource(resourceId);
+        if (r != null) write(resourceDir(r).resolve(r.id + ".html"), buildResource(r));
+    }
+
+    public void generateLinksIndex() throws IOException {
         write(layout.links().resolve("index.html"), buildLinksIndex());
+    }
+
+    public void generateWordlistsIndex() throws IOException {
+        if (!project.interestingStrings.isEmpty()) {
+            write(layout.wordlists().resolve("index.html"), buildWordlistsIndex());
+        }
+    }
+
+    /** Regenerate the document that shows notes for the given entity, if any. */
+    public void generateDocFor(EntityType type, String id) throws IOException {
+        if (type == null || id == null) return;
+        switch (type) {
+            case PAGE: generatePage(id); break;
+            case FORM: generateForm(id); break;
+            case VULNERABILITY: generateVulnerability(id); break;
+            case RESOURCE: generateResource(id); break;
+            default: break; // project-level and other notes show on the index only
+        }
+    }
+
+    private Path resourceDir(Resource r) {
+        return isCodeResource(r) ? layout.scripts() : layout.files();
     }
 
     private static boolean isCodeResource(Resource r) {
@@ -76,6 +160,11 @@ public final class HtmlGenerator {
         row(b, "Main URL", link(t.mainUrl));
         row(b, "Assessment", orDash(t.assessmentName));
         row(b, "Date", orDash(t.assessmentDate));
+        if (t.server != null && !t.server.isBlank()) row(b, "Server", orDash(t.server));
+        if (t.frameworks != null && !t.frameworks.isBlank()) row(b, "Frameworks", orDash(t.frameworks));
+        if (t.authentication != null && !t.authentication.isBlank()) {
+            row(b, "Authentication", orDash(t.authentication));
+        }
         row(b, "Pages", String.valueOf(project.pages.size()));
         row(b, "Forms", String.valueOf(project.forms.size()));
         row(b, "Findings", String.valueOf(project.vulnerabilities.size()));
@@ -90,15 +179,29 @@ public final class HtmlGenerator {
             b.append(empty("No technologies recorded yet."));
         } else {
             b.append("<table class=\"grid\"><thead><tr><th>Category</th><th>Name</th>"
-                    + "<th>Version</th><th>Evidence</th></tr></thead><tbody>");
+                    + "<th>Version</th><th>Confidence</th><th>Evidence</th>"
+                    + "<th>Updated</th></tr></thead><tbody>");
             for (Technology.Category cat : Technology.Category.values()) {
                 List<Technology> list = byCat.get(cat);
                 if (list == null) continue;
                 for (Technology tech : list) {
+                    String conf = tech.confidence == null ? "—" : tech.confidence.label;
+                    String confClass = "conf-" + (tech.confidence == null ? "medium"
+                            : tech.confidence.name().toLowerCase());
+                    StringBuilder ev = new StringBuilder();
+                    List<String> lines = tech.evidenceLines();
+                    for (int i = 0; i < lines.size(); i++) {
+                        if (i > 0) ev.append("<br>");
+                        ev.append("<code>").append(esc(lines.get(i))).append("</code>");
+                    }
+                    if (lines.isEmpty()) ev.append("—");
+                    if (tech.userEdited) ev.append(" <span class=\"dim\">(tester-verified)</span>");
                     b.append("<tr><td>").append(esc(cat.label)).append("</td><td>")
                             .append(orDash(tech.name)).append("</td><td>")
-                            .append(orDash(tech.version)).append("</td><td>")
-                            .append(orDash(tech.evidence)).append("</td></tr>");
+                            .append(orDash(tech.version)).append("</td><td class=\"")
+                            .append(confClass).append("\">").append(esc(conf)).append("</td><td>")
+                            .append(ev).append("</td><td class=\"dim\">")
+                            .append(orDash(tech.lastUpdated)).append("</td></tr>");
                 }
             }
             b.append("</tbody></table>");
@@ -174,7 +277,47 @@ public final class HtmlGenerator {
         }
         b.append(panelClose());
 
+        // Interesting strings / wordlists (spec §8).
+        if (!project.interestingStrings.isEmpty()) {
+            b.append(panelOpen("WORDLISTS"));
+            b.append("<p><a href=\"wordlists/index.html\">Interesting strings ("
+                    + project.interestingStrings.size() + ") →</a></p>");
+            b.append(panelClose());
+        }
+
         return shell(project.name + " // overview", "", b.toString(), "index");
+    }
+
+    private String buildWordlistsIndex() {
+        StringBuilder b = new StringBuilder();
+        String up = "../";
+        b.append(panelOpen("WORDLISTS // interesting strings"));
+        b.append("<p class=\"dim\">Marked strings, bucketed for export to other "
+                + "authorized tools. Exported files live in <code>wordlists/*.txt</code>.</p>");
+        b.append(panelClose());
+        for (com.assessmentnotebook.model.InterestingString.Category cat
+                : com.assessmentnotebook.model.InterestingString.Category.values()) {
+            List<com.assessmentnotebook.model.InterestingString> items = project.interestingStrings
+                    .stream().filter(s -> s.category == cat).toList();
+            if (items.isEmpty()) continue;
+            b.append(panelOpen(esc(cat.label) + " (" + items.size() + ") — "
+                    + esc(cat.slug) + ".txt"));
+            b.append("<table class=\"grid\"><thead><tr><th>Value</th><th>Source</th>"
+                    + "<th>Element</th><th>Context</th></tr></thead><tbody>");
+            for (com.assessmentnotebook.model.InterestingString s : items) {
+                Page src = s.sourcePageId == null ? null : project.findPage(s.sourcePageId);
+                String source = src == null ? "—"
+                        : "<a href=\"" + up + "pages/" + src.id + ".html\">"
+                          + orDash(shortUrl(src.url)) + "</a>";
+                b.append("<tr><td><code>").append(esc(s.value)).append("</code></td><td>")
+                        .append(source).append("</td><td>").append(orDash(s.sourceElement))
+                        .append("</td><td class=\"dim\">").append(orDash(s.context))
+                        .append("</td></tr>");
+            }
+            b.append("</tbody></table>");
+            b.append(panelClose());
+        }
+        return shell("wordlists", up, b.toString(), "wordlists");
     }
 
     private String renderTreeNode(TreeNode node, String up) {
@@ -214,7 +357,11 @@ public final class HtmlGenerator {
         row(b, "Method", esc(p.method));
         row(b, "Status", p.statusCode == 0 ? "—" : String.valueOf(p.statusCode));
         row(b, "Content-Type", orDash(p.contentType));
-        row(b, "Discovery source", orDash(p.discoverySource));
+        String discovery = p.discoverySourceKind == null ? "—" : esc(p.discoverySourceKind.label);
+        if (p.discoverySource != null && !p.discoverySource.isBlank()) {
+            discovery += " <span class=\"dim\">(" + esc(p.discoverySource) + ")</span>";
+        }
+        row(b, "Discovery source", discovery);
         row(b, "First seen", orDash(p.firstSeen));
         row(b, "Last seen", orDash(p.lastSeen));
         b.append("</table>");
@@ -231,8 +378,7 @@ public final class HtmlGenerator {
         }
 
         // Screenshots as a stepped sequence.
-        List<Screenshot> shots = project.screenshots.stream()
-                .filter(s -> p.id.equals(s.pageId))
+        List<Screenshot> shots = of(screenshotsByPage, p.id).stream()
                 .sorted(Comparator.comparingInt(s -> s.sequence)).toList();
         if (!shots.isEmpty()) {
             b.append(panelOpen("VISUAL STATES"));
@@ -240,9 +386,9 @@ public final class HtmlGenerator {
             b.append("<div class=\"frames\">");
             int i = 0;
             for (Screenshot s : shots) {
-                b.append("<figure class=\"frame\" data-index=\"").append(i)
-                        .append("\"><img src=\"").append(up).append(esc(s.imageFile))
-                        .append("\" alt=\"").append(esc(s.stateDescription)).append("\"><figcaption>")
+                b.append("<figure class=\"frame\" data-index=\"").append(i).append("\">");
+                b.append(screenshotMarkup(s, up));
+                b.append("<figcaption>")
                         .append("State ").append(i + 1).append(": ").append(orDash(s.stateDescription));
                 if (s.relatedInteractionId != null) {
                     Interaction act = project.findInteraction(s.relatedInteractionId);
@@ -259,8 +405,7 @@ public final class HtmlGenerator {
         }
 
         // Interactions.
-        List<Interaction> acts = project.interactions.stream()
-                .filter(a -> p.id.equals(a.pageId)).toList();
+        List<Interaction> acts = of(interactionsByPage, p.id);
         if (!acts.isEmpty()) {
             b.append(panelOpen("INTERACTIONS"));
             b.append("<table class=\"grid\"><thead><tr><th>Action</th><th>Observed behavior</th>"
@@ -294,8 +439,7 @@ public final class HtmlGenerator {
 
         // Links.
         b.append(panelOpen("LINKS"));
-        List<Link> pageLinks = project.links.stream()
-                .filter(l -> p.id.equals(l.sourcePageId)).toList();
+        List<Link> pageLinks = of(linksByPage, p.id);
         if (pageLinks.isEmpty()) {
             b.append(empty("No links documented."));
         } else {
@@ -332,6 +476,9 @@ public final class HtmlGenerator {
         }
         b.append(panelClose());
 
+        // Variants and the differences between them (spec §12, §13).
+        appendVariants(b, p, up);
+
         // Source files (embedded with highlighting, and downloadable).
         if (!p.sourceFiles.isEmpty()) {
             b.append(panelOpen("SOURCE"));
@@ -341,6 +488,94 @@ public final class HtmlGenerator {
 
         b.append(notesPanel(EntityType.PAGE, p.id));
         return shell(shortUrl(p.url) + " // page", up, b.toString(), "page");
+    }
+
+    private void appendVariants(StringBuilder b, Page p, String up) {
+        List<com.assessmentnotebook.model.PageVariant> vs = of(variantsByPage, p.id);
+        if (vs.isEmpty()) return;
+        b.append(panelOpen("VARIANTS (" + vs.size() + ")"));
+        b.append("<table class=\"grid\"><thead><tr><th>Label</th><th>Conditions</th>"
+                + "<th>Status</th><th>Length</th><th>Title</th><th>Reflected</th>"
+                + "</tr></thead><tbody>");
+        for (com.assessmentnotebook.model.PageVariant v : vs) {
+            b.append("<tr><td>").append(orDash(v.label)).append("</td><td class=\"dim\"><code>")
+                    .append(esc(conditions(v))).append("</code></td><td>")
+                    .append(v.statusCode == 0 ? "—" : String.valueOf(v.statusCode)).append("</td><td>")
+                    .append(v.bodyLength).append("</td><td>").append(orDash(v.title)).append("</td><td>")
+                    .append(v.reflectedInputNames.isEmpty() ? "—"
+                            : esc(String.join(", ", v.reflectedInputNames)))
+                    .append("</td></tr>");
+        }
+        b.append("</tbody></table>");
+        b.append(panelClose());
+
+        List<com.assessmentnotebook.analyze.VariantDiff.Comparison> comps =
+                com.assessmentnotebook.analyze.VariantDiff.compareToBaseline(vs);
+        if (!comps.isEmpty()) {
+            b.append(panelOpen("DYNAMIC DIFFERENCES (vs. baseline)"));
+            for (var c : comps) {
+                com.assessmentnotebook.model.PageVariant v = project.findVariant(c.variantId);
+                b.append("<div class=\"diff\"><h4>")
+                        .append(esc(v == null ? c.variantId : label(v))).append("</h4>");
+                b.append("<p class=\"dim\">Inputs changed:</p><ul class=\"plain\">");
+                if (c.inputDifferences.isEmpty()) b.append("<li>—</li>");
+                for (String d : c.inputDifferences) {
+                    b.append("<li><code>").append(esc(d)).append("</code></li>");
+                }
+                b.append("</ul><p class=\"dim\">Behavior changes:</p><ul class=\"plain\">");
+                if (c.outputDifferences.isEmpty()) b.append("<li>no observable change</li>");
+                for (String d : c.outputDifferences) {
+                    b.append("<li><code>").append(esc(d)).append("</code></li>");
+                }
+                b.append("</ul></div>");
+            }
+            b.append(panelClose());
+        }
+    }
+
+    /** An image, or an SVG overlay with annotation rectangles (spec §9). */
+    private String screenshotMarkup(Screenshot s, String up) {
+        String src = up + esc(s.imageFile);
+        String alt = esc(s.stateDescription);
+        if (s.annotations == null || s.annotations.isEmpty()
+                || s.imageWidth <= 0 || s.imageHeight <= 0) {
+            return "<img src=\"" + src + "\" alt=\"" + alt + "\">";
+        }
+        StringBuilder b = new StringBuilder();
+        b.append("<svg class=\"annotated\" viewBox=\"0 0 ").append(s.imageWidth).append(' ')
+                .append(s.imageHeight).append("\" xmlns=\"http://www.w3.org/2000/svg\" ")
+                .append("preserveAspectRatio=\"xMidYMid meet\" role=\"img\">");
+        b.append("<image href=\"").append(src).append("\" x=\"0\" y=\"0\" width=\"")
+                .append(s.imageWidth).append("\" height=\"").append(s.imageHeight).append("\"/>");
+        int strokeW = Math.max(2, s.imageWidth / 400);
+        int fontSize = Math.max(12, s.imageWidth / 60);
+        for (com.assessmentnotebook.model.Annotation a : s.annotations) {
+            b.append("<rect x=\"").append(a.x).append("\" y=\"").append(a.y)
+                    .append("\" width=\"").append(a.width).append("\" height=\"").append(a.height)
+                    .append("\" fill=\"none\" stroke=\"#e8564b\" stroke-width=\"").append(strokeW)
+                    .append("\"/>");
+            if (a.label != null && !a.label.isBlank()) {
+                int ty = a.y > fontSize + 4 ? a.y - 4 : a.y + a.height + fontSize;
+                b.append("<text x=\"").append(a.x).append("\" y=\"").append(ty)
+                        .append("\" fill=\"#e8564b\" font-size=\"").append(fontSize)
+                        .append("\" font-family=\"monospace\">").append(esc(a.label)).append("</text>");
+            }
+        }
+        b.append("</svg>");
+        return b.toString();
+    }
+
+    private static String label(com.assessmentnotebook.model.PageVariant v) {
+        return v.label == null || v.label.isBlank() ? v.id : v.label;
+    }
+
+    private static String conditions(com.assessmentnotebook.model.PageVariant v) {
+        StringBuilder s = new StringBuilder();
+        v.queryParams.forEach((k, val) -> s.append(k).append("=").append(val).append(" "));
+        v.bodyParams.forEach((k, val) -> s.append(k).append("=").append(val).append(" "));
+        v.jsonParams.forEach((k, val) -> s.append(k).append(":").append(val).append(" "));
+        if (!v.authContext.isBlank()) s.append("[auth:").append(v.authContext).append("]");
+        return s.toString().trim();
     }
 
     // ================================================================ form
@@ -393,6 +628,7 @@ public final class HtmlGenerator {
                     }
                     b.append("</tbody></table></div>");
                 }
+                appendParameterTests(b, pid);
                 b.append("</div>");
             }
         }
@@ -400,6 +636,35 @@ public final class HtmlGenerator {
 
         b.append(notesPanel(EntityType.FORM, f.id));
         return shell("form " + f.id, up, b.toString(), "form");
+    }
+
+    private void appendParameterTests(StringBuilder b, String parameterId) {
+        List<com.assessmentnotebook.model.ParameterTest> tests = of(testsByParameter, parameterId);
+        if (tests.isEmpty()) return;
+        com.assessmentnotebook.analyze.ParameterAnalysis.Summary sum =
+                com.assessmentnotebook.analyze.ParameterAnalysis.summarize(tests);
+        b.append("<div class=\"ptests\"><h5>Parameter tests</h5>");
+        StringBuilder tags = new StringBuilder();
+        if (sum.required) tags.append("required "); else if (sum.acceptsEmpty) tags.append("accepts-empty ");
+        if (sum.acceptsOmitted) tags.append("optional ");
+        if (sum.reflected) tags.append("reflected ");
+        if (sum.changesStatus) tags.append("status-varies ");
+        if (sum.changesLength) tags.append("length-varies ");
+        if (sum.lengthRestricted) tags.append("length-limited ");
+        if (tags.length() > 0) {
+            b.append("<p class=\"dim\">Summary: ").append(esc(tags.toString().trim())).append("</p>");
+        }
+        b.append("<table class=\"grid\"><thead><tr><th>Probe</th><th>Sent</th><th>Status</th>"
+                + "<th>Length</th><th>Observation</th><th>Class</th></tr></thead><tbody>");
+        for (com.assessmentnotebook.model.ParameterTest t : tests) {
+            String cls = t.classification == null ? "" : t.classification.label;
+            b.append("<tr><td>").append(orDash(t.probeLabel)).append("</td><td><code>")
+                    .append(esc(t.sentValue)).append("</code></td><td>").append(t.responseStatus)
+                    .append("</td><td>").append(t.responseLength).append("</td><td class=\"dim\">")
+                    .append(orDash(t.observation)).append("</td><td>").append(esc(cls))
+                    .append("</td></tr>");
+        }
+        b.append("</tbody></table></div>");
     }
 
     // ============================================================ resource
@@ -535,7 +800,7 @@ public final class HtmlGenerator {
     }
 
     private String notesPanel(EntityType type, String id) {
-        List<Note> notes = project.notesFor(type, id);
+        List<Note> notes = of(notesByTarget, type + ":" + id);
         if (notes.isEmpty()) return "";
         StringBuilder b = new StringBuilder(panelOpen("NOTES & OBSERVATIONS"));
         b.append("<ul class=\"notelist\">");
@@ -649,8 +914,16 @@ public final class HtmlGenerator {
                 + "<script src=\"" + up + "assets/app.js\"></script>\n</body>\n</html>\n";
     }
 
+    /** Write the document, skipping the write when the file already has this content. */
     private static void write(Path path, String html) throws IOException {
-        Files.createDirectories(path.getParent());
-        Files.write(path, html.getBytes(StandardCharsets.UTF_8));
+        byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
+        try {
+            if (Files.size(path) == bytes.length && Arrays.equals(Files.readAllBytes(path), bytes)) {
+                return;
+            }
+        } catch (IOException notThere) {
+            Files.createDirectories(path.getParent());
+        }
+        Files.write(path, bytes);
     }
 }

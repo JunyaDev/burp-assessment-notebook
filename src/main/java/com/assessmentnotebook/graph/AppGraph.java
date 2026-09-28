@@ -7,7 +7,9 @@ import com.assessmentnotebook.model.Relationship;
 
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * A read-only view over a {@link Project}'s relationships. It answers the graph
@@ -20,6 +22,11 @@ import java.util.List;
  */
 public final class AppGraph {
     private final Project project;
+    // Edge indexes, built on first use so a graph over a large project answers
+    // per-entity questions without rescanning every relationship each time.
+    private Map<String, List<Relationship>> outIndex;
+    private Map<String, List<Relationship>> inIndex;
+    private int indexedSize = -1;
 
     public AppGraph(Project project) {
         this.project = project;
@@ -27,20 +34,29 @@ public final class AppGraph {
 
     /** Edges originating at the given entity. */
     public List<Relationship> outgoing(EntityType type, String id) {
-        List<Relationship> out = new ArrayList<>();
-        for (Relationship r : project.relationships) {
-            if (r.fromType == type && id.equals(r.fromId)) out.add(r);
-        }
-        return out;
+        ensureIndex();
+        return outIndex.getOrDefault(key(type, id), List.of());
     }
 
     /** Edges pointing at the given entity. */
     public List<Relationship> incoming(EntityType type, String id) {
-        List<Relationship> out = new ArrayList<>();
+        ensureIndex();
+        return inIndex.getOrDefault(key(type, id), List.of());
+    }
+
+    private void ensureIndex() {
+        if (outIndex != null && indexedSize == project.relationships.size()) return;
+        outIndex = new HashMap<>();
+        inIndex = new HashMap<>();
         for (Relationship r : project.relationships) {
-            if (r.toType == type && id.equals(r.toId)) out.add(r);
+            outIndex.computeIfAbsent(key(r.fromType, r.fromId), k -> new ArrayList<>()).add(r);
+            inIndex.computeIfAbsent(key(r.toType, r.toId), k -> new ArrayList<>()).add(r);
         }
-        return out;
+        indexedSize = project.relationships.size();
+    }
+
+    private static String key(EntityType type, String id) {
+        return type + ":" + id;
     }
 
     /** Outgoing edges of the given entity that carry a particular label. */

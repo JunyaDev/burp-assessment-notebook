@@ -27,7 +27,25 @@ change, so relative links between generated documents never break.
 | `Screenshot` | `shot` | An image of a page in one visual state |
 | `Note` | `note` | A classified, timestamped note attachable to any entity |
 | `Vulnerability` | `vuln` | A finding, linked to the components it involves |
+| `PageVariant` | `var` | One rendering of a page under specific request conditions (§12) |
+| `InterestingString` | `istr` | A marked string for later wordlists (§8) |
+| `ParameterTest` | `ptest` | The recorded result of one probe against a parameter (§16, §18) |
+| `Annotation` | `anno` | A labelled rectangle drawn on a screenshot (§9); embedded in `Screenshot` |
 | `Relationship` | — | A directed, typed edge between two entities |
+
+### Enrichments added in v1.1
+
+- **`Resource`** now has a *canonical* `url` (normalized by `ResourceUrls`) plus
+  `observedUrls`, so one file/endpoint is one record no matter how it was found.
+- **`Page`** gains `discoverySourceKind` (a `DiscoverySource` enum: direct,
+  redirect, link, form, XHR, Burp history/repeater, ...) with `discoverySource`
+  kept as free-text detail, and `variantIds`.
+- **`Technology`** gains `confidence`, a structured `evidences` list, `history`,
+  `firstObserved`/`lastUpdated`, and a `userEdited` flag that protects manual
+  corrections from automatic detection.
+- **`Screenshot`** gains `imageWidth`/`imageHeight` and an `annotations` list.
+- **`TargetInfo`** gains `server`, `frameworks`, `authentication` (filled by the
+  setup wizard).
 
 `Reflection` and `Relationship` are embedded/value types (no standalone document);
 everything else has an id.

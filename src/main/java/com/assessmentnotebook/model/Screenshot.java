@@ -1,5 +1,8 @@
 package com.assessmentnotebook.model;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * An image capturing a page in a particular visual state. A page may own many
  * screenshots representing sequential interactive states (default, menu open,
@@ -20,4 +23,9 @@ public class Screenshot {
     public String relatedRequestId;
     public String timestamp;
     public String notes = "";
+    /** Natural pixel dimensions, for scalable annotation overlays. */
+    public int imageWidth;
+    public int imageHeight;
+    /** Rectangles marking elements on this image (spec §9). */
+    public List<Annotation> annotations = new ArrayList<>();
 }

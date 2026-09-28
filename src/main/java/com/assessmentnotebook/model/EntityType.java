@@ -21,7 +21,11 @@ public enum EntityType {
     RESPONSE("resp"),
     SCREENSHOT("shot"),
     NOTE("note"),
-    VULNERABILITY("vuln");
+    VULNERABILITY("vuln"),
+    INTERESTING_STRING("istr"),
+    PAGE_VARIANT("var"),
+    PARAM_TEST("ptest"),
+    ANNOTATION("anno");
 
     /** Short slug used as the prefix of generated ids, e.g. {@code page-0007}. */
     public final String slug;

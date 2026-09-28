@@ -21,20 +21,22 @@ public final class RegisterPageDialog extends JDialog {
     private final MontoyaApi api;
     private final PageRegistration reg;
 
-    private final JTextField discovery = new JTextField(28);
+    private final JComboBox<com.assessmentnotebook.model.DiscoverySource> discoveryKind =
+            new JComboBox<>(com.assessmentnotebook.model.DiscoverySource.values());
+    private final JTextField discovery = new JTextField(22);
     private final List<JCheckBox> formBoxes = new ArrayList<>();
     private final List<JCheckBox> linkBoxes = new ArrayList<>();
     private final List<JCheckBox> resourceBoxes = new ArrayList<>();
 
     public RegisterPageDialog(MontoyaApi api, NotebookSession session, PageRegistration reg) {
-        super((Frame) null, "Register Page", true);
+        super(BurpUi.owner(api), "Register Page", true);
         this.api = api;
         this.session = session;
         this.reg = reg;
         build();
         pack();
         setSize(new Dimension(720, Math.min(760, getHeight() + 40)));
-        setLocationRelativeTo(null);
+        setLocationRelativeTo(getOwner());
     }
 
     private void build() {
@@ -43,12 +45,15 @@ public final class RegisterPageDialog extends JDialog {
 
         // Summary.
         JPanel summary = new JPanel(new GridLayout(0, 1, 2, 2));
-        summary.setBorder(RetroTheme.panelBorder("PAGE"));
+        summary.setBorder(RetroTheme.panelBorder(api, "PAGE"));
         summary.add(new JLabel(reg.method + "  " + reg.url));
         summary.add(new JLabel("Status: " + reg.statusCode + "    Content-Type: "
                 + (reg.contentType == null ? "" : reg.contentType)));
         JPanel disc = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        disc.add(new JLabel("Discovery source:"));
+        disc.add(new JLabel("Discovered via:"));
+        discoveryKind.setSelectedItem(reg.discoverySourceKind);
+        disc.add(discoveryKind);
+        disc.add(new JLabel("detail:"));
         discovery.setText(reg.discoverySource == null ? "" : reg.discoverySource);
         disc.add(discovery);
         summary.add(disc);
@@ -71,8 +76,10 @@ public final class RegisterPageDialog extends JDialog {
         content.add(buttons, BorderLayout.SOUTH);
 
         setContentPane(content);
-        RetroTheme.apply(content);
-        content.setBackground(RetroTheme.BG);
+        RetroTheme.apply(api, content);
+        Color bg = RetroTheme.background(api);
+        if (bg != null) content.setBackground(bg);
+        getRootPane().setDefaultButton(register);
     }
 
     private JComponent checklist(String title, List<String> labels, List<JCheckBox> out) {
@@ -80,7 +87,7 @@ public final class RegisterPageDialog extends JDialog {
         box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
         if (labels.isEmpty()) {
             JLabel none = new JLabel("(none detected)");
-            none.setForeground(RetroTheme.FG_DIM);
+            RetroTheme.accent(none, RetroTheme.Accent.HINT);
             box.add(none);
         }
         for (String label : labels) {
@@ -89,7 +96,7 @@ public final class RegisterPageDialog extends JDialog {
             box.add(cb);
         }
         JScrollPane scroll = new JScrollPane(box);
-        scroll.setBorder(RetroTheme.panelBorder(title));
+        scroll.setBorder(RetroTheme.panelBorder(api, title));
         return scroll;
     }
 
@@ -137,6 +144,8 @@ public final class RegisterPageDialog extends JDialog {
             if (resourceBoxes.get(i).isSelected()) pruned.resources.add(original.resources.get(i));
         }
         reg.discovered = pruned;
+        reg.discoverySourceKind =
+                (com.assessmentnotebook.model.DiscoverySource) discoveryKind.getSelectedItem();
         reg.discoverySource = discovery.getText().trim();
 
         setEnabled(false);

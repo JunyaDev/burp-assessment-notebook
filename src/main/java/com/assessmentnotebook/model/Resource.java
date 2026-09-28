@@ -25,7 +25,10 @@ public class Resource {
 
     public String id;
     public Type type = Type.OTHER;
+    /** The canonical URL that identifies this resource (see ResourceUrls). */
     public String url = "";
+    /** Every raw URL form under which this resource was actually seen. */
+    public List<String> observedUrls = new ArrayList<>();
     /** Optional saved copy of the resource, relative to the project root. */
     public String sourceFile;
     /** Ids of pages that load or reference this resource. */
@@ -33,4 +36,12 @@ public class Resource {
     public String notes = "";
     public String createdAt;
     public String updatedAt;
+
+    /**
+     * Type precedence for merging: a later, more specific classification should
+     * win over a generic {@link Type#OTHER}. Higher rank = more specific.
+     */
+    public static int specificity(Type t) {
+        return t == Type.OTHER ? 0 : 1;
+    }
 }

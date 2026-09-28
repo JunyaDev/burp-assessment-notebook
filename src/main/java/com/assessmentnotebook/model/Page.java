@@ -15,7 +15,9 @@ public class Page {
     public String method = "GET";
     public int statusCode;
     public String contentType = "";
-    /** Short human note on how this page was first reached. */
+    /** How this page was found (controlled vocabulary; spec §3). */
+    public DiscoverySource discoverySourceKind = DiscoverySource.MANUAL;
+    /** Free-text specifics for the discovery, e.g. the referring URL. */
     public String discoverySource = "";
     public String firstSeen;
     public String lastSeen;
@@ -26,6 +28,7 @@ public class Page {
     public List<String> resourceIds = new ArrayList<>();
     public List<String> screenshotIds = new ArrayList<>();
     public List<String> interactionIds = new ArrayList<>();
+    public List<String> variantIds = new ArrayList<>();
     /** Saved source files for this page, relative to the project root. */
     public List<String> sourceFiles = new ArrayList<>();
 

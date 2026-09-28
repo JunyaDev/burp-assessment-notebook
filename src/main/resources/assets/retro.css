@@ -251,3 +251,19 @@ pre.source code { background: none; color: inherit; padding: 0; }
   body { color: #111; }
   .panel { break-inside: avoid; }
 }
+
+/* ---- v1.1 additions: confidence, diffs, param tests, annotations ---- */
+.dim, span.dim { color: var(--fg-dim); }
+.conf-low     { color: var(--fg-dim); }
+.conf-medium  { color: var(--blue); }
+.conf-high    { color: var(--green); }
+.conf-confirmed { color: var(--amber); font-weight: bold; }
+
+.diff { border-left: 2px solid var(--bg3); padding-left: 10px; margin: 10px 0; }
+.diff h4 { color: var(--amber); margin: 4px 0; }
+
+.ptests { margin-top: 10px; border-top: 1px dotted var(--bg3); padding-top: 8px; }
+.ptests h5 { color: var(--blue); margin: 4px 0; }
+
+svg.annotated { max-width: 100%; height: auto; display: block; border: 1px solid var(--bg3); }
+figure.frame svg.annotated { background: var(--bg); }

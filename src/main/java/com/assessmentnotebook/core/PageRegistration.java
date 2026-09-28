@@ -17,6 +17,10 @@ public class PageRegistration {
     public String method = "GET";
     public int statusCode;
     public String contentType = "";
+    /** How the page was found (spec §3); inferred at extraction, editable. */
+    public com.assessmentnotebook.model.DiscoverySource discoverySourceKind =
+            com.assessmentnotebook.model.DiscoverySource.MANUAL;
+    /** Free-text specifics for the discovery, e.g. the referring URL. */
     public String discoverySource = "";
     /** Id of the page this one was discovered from, if known. */
     public String parentPageId;

@@ -36,6 +36,9 @@ public class Project {
     public List<Screenshot> screenshots = new ArrayList<>();
     public List<Note> notes = new ArrayList<>();
     public List<Vulnerability> vulnerabilities = new ArrayList<>();
+    public List<InterestingString> interestingStrings = new ArrayList<>();
+    public List<PageVariant> variants = new ArrayList<>();
+    public List<ParameterTest> parameterTests = new ArrayList<>();
     public List<Relationship> relationships = new ArrayList<>();
 
     /** Per-type id counters (last used number for each type slug). */
@@ -49,17 +52,18 @@ public class Project {
     }
 
     // ---- lookups ---------------------------------------------------------
-    public Page findPage(String id) { return byId(pages, id); }
-    public Resource findResource(String id) { return byId(resources, id); }
-    public Link findLink(String id) { return byId(links, id); }
-    public Form findForm(String id) { return byId(forms, id); }
-    public Parameter findParameter(String id) { return byId(parameters, id); }
-    public Interaction findInteraction(String id) { return byId(interactions, id); }
-    public RequestRecord findRequest(String id) { return byId(requests, id); }
-    public ResponseRecord findResponse(String id) { return byId(responses, id); }
-    public Screenshot findScreenshot(String id) { return byId(screenshots, id); }
-    public Vulnerability findVulnerability(String id) { return byId(vulnerabilities, id); }
-    public Technology findTechnology(String id) { return byId(technologies, id); }
+    public Page findPage(String id) { return byId(pages, id, p -> p.id); }
+    public Resource findResource(String id) { return byId(resources, id, r -> r.id); }
+    public Link findLink(String id) { return byId(links, id, l -> l.id); }
+    public Form findForm(String id) { return byId(forms, id, f -> f.id); }
+    public Parameter findParameter(String id) { return byId(parameters, id, p -> p.id); }
+    public Interaction findInteraction(String id) { return byId(interactions, id, i -> i.id); }
+    public RequestRecord findRequest(String id) { return byId(requests, id, r -> r.id); }
+    public ResponseRecord findResponse(String id) { return byId(responses, id, r -> r.id); }
+    public Screenshot findScreenshot(String id) { return byId(screenshots, id, s -> s.id); }
+    public Vulnerability findVulnerability(String id) { return byId(vulnerabilities, id, v -> v.id); }
+    public Technology findTechnology(String id) { return byId(technologies, id, t -> t.id); }
+    public PageVariant findVariant(String id) { return byId(variants, id, v -> v.id); }
 
     /** Find an existing page by URL+method, or null. Used to avoid duplicates. */
     public Page findPageByRequest(String url, String method) {
@@ -87,15 +91,10 @@ public class Project {
         return m;
     }
 
-    private static <T> T byId(List<T> list, String id) {
+    private static <T> T byId(List<T> list, String id, java.util.function.Function<T, String> idOf) {
         if (id == null) return null;
         for (T t : list) {
-            try {
-                java.lang.reflect.Field f = t.getClass().getField("id");
-                if (id.equals(f.get(t))) return t;
-            } catch (ReflectiveOperationException ignored) {
-                return null;
-            }
+            if (id.equals(idOf.apply(t))) return t;
         }
         return null;
     }

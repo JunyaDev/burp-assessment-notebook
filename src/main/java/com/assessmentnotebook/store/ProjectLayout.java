@@ -37,11 +37,12 @@ public final class ProjectLayout {
     public Path vulnerabilities() { return root.resolve("vulnerabilities"); }
     public Path screenshots() { return root.resolve("screenshots"); }
     public Path source()      { return root.resolve("source"); }
+    public Path wordlists()   { return root.resolve("wordlists"); }
 
     /** Create the full directory skeleton if it does not already exist. */
     public void ensureDirectories() throws IOException {
         for (Path p : new Path[]{root, assets(), pages(), forms(), links(),
-                scripts(), files(), vulnerabilities(), screenshots(), source()}) {
+                scripts(), files(), vulnerabilities(), screenshots(), source(), wordlists()}) {
             Files.createDirectories(p);
         }
     }

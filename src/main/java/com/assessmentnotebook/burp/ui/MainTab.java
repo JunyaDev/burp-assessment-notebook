@@ -50,19 +50,21 @@ public final class MainTab extends JPanel {
         JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         JButton open = new JButton("New / Open Project…");
         open.addActionListener(e -> chooseProject());
+        JButton setup = new JButton("Project Setup…");
+        setup.addActionListener(e -> openSetupWizard());
         JButton docs = new JButton("Open Documentation");
         docs.addActionListener(e -> openDocs());
         JButton refresh = new JButton("Refresh");
         refresh.addActionListener(e -> refresh());
         top.add(open);
+        top.add(setup);
         top.add(docs);
         top.add(refresh);
         top.add(projectLabel);
 
         JPanel header = new JPanel(new BorderLayout());
         JLabel title = new JLabel("▣ ASSESSMENT NOTEBOOK");
-        title.setFont(new Font(Font.MONOSPACED, Font.BOLD, 16));
-        title.setForeground(RetroTheme.GREEN);
+        RetroTheme.accent(title, RetroTheme.Accent.TITLE);
         header.add(title, BorderLayout.WEST);
         header.add(top, BorderLayout.CENTER);
         add(header, BorderLayout.NORTH);
@@ -71,16 +73,16 @@ public final class MainTab extends JPanel {
         appTree.setRootVisible(true);
         appTree.setShowsRootHandles(true);
         JScrollPane treeScroll = new JScrollPane(appTree);
-        treeScroll.setBorder(RetroTheme.panelBorder("APPLICATION STRUCTURE"));
+        treeScroll.setBorder(RetroTheme.panelBorder(api, "APPLICATION STRUCTURE"));
 
         // Recent observations + findings.
         JList<String> notesList = new JList<>(notesModel);
         JScrollPane notesScroll = new JScrollPane(notesList);
-        notesScroll.setBorder(RetroTheme.panelBorder("RECENT OBSERVATIONS"));
+        notesScroll.setBorder(RetroTheme.panelBorder(api, "RECENT OBSERVATIONS"));
 
         JList<String> vulnList = new JList<>(vulnModel);
         JScrollPane vulnScroll = new JScrollPane(vulnList);
-        vulnScroll.setBorder(RetroTheme.panelBorder("VULNERABILITIES"));
+        vulnScroll.setBorder(RetroTheme.panelBorder(api, "VULNERABILITIES"));
 
         JSplitPane rightSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, vulnScroll, notesScroll);
         rightSplit.setResizeWeight(0.5);
@@ -90,16 +92,19 @@ public final class MainTab extends JPanel {
 
         // Footer: status + help.
         JPanel south = new JPanel(new BorderLayout());
-        statusLabel.setForeground(RetroTheme.FG_DIM);
+        RetroTheme.accent(statusLabel, RetroTheme.Accent.HINT);
         JLabel help = new JLabel("Right-click a request → Assessment Notebook → "
                 + "Register Page / Add Observation / Create Vulnerability / Capture Screenshot");
-        help.setForeground(RetroTheme.FG_DIM);
+        RetroTheme.accent(help, RetroTheme.Accent.HINT);
         south.add(statusLabel, BorderLayout.WEST);
         south.add(help, BorderLayout.SOUTH);
         add(south, BorderLayout.SOUTH);
 
-        RetroTheme.apply(this);
-        setBackground(RetroTheme.BG);
+        RetroTheme.apply(api, this);
+        // The title keeps its larger bold face regardless of theme.
+        title.setFont(new Font(Font.MONOSPACED, Font.BOLD, 16));
+        Color bg = RetroTheme.background(api);
+        if (bg != null) setBackground(bg);
     }
 
     // ---- actions ---------------------------------------------------------
@@ -126,18 +131,34 @@ public final class MainTab extends JPanel {
         }
     }
 
+    private void openSetupWizard() {
+        if (!session.isOpen()) { error("Open a project first."); return; }
+        new ProjectSetupWizard(api, session).setVisible(true);
+    }
+
     private void openDocs() {
         if (!session.isOpen()) { error("Open a project first."); return; }
         Path index = session.controller().layout().indexHtml();
-        try {
-            if (Desktop.isDesktopSupported()) {
-                Desktop.getDesktop().browse(index.toUri());
-            } else {
-                info("Documentation is at:\n" + index);
+        // Desktop.browse can block for seconds on Linux while the handler
+        // starts, so keep it off the event thread.
+        new SwingWorker<Boolean, Void>() {
+            @Override protected Boolean doInBackground() {
+                try {
+                    if (!Desktop.isDesktopSupported()) return false;
+                    Desktop.getDesktop().browse(index.toUri());
+                    return true;
+                } catch (IOException | RuntimeException ex) {
+                    return false;
+                }
             }
-        } catch (IOException | UnsupportedOperationException ex) {
-            info("Documentation is at:\n" + index);
-        }
+            @Override protected void done() {
+                try {
+                    if (!get()) info("Documentation is at:\n" + index);
+                } catch (Exception ex) {
+                    info("Documentation is at:\n" + index);
+                }
+            }
+        }.execute();
     }
 
     /** Rebuild the tab from the current project. Safe to call on the EDT. */
@@ -170,7 +191,8 @@ public final class MainTab extends JPanel {
         // Observations (most recent first).
         notesModel.clear();
         p.notes.stream()
-                .sorted((a, b) -> b.createdAt == null ? -1 : b.createdAt.compareTo(a.createdAt))
+                .sorted(java.util.Comparator.comparing((Note n) -> n.createdAt == null ? "" : n.createdAt)
+                        .reversed())
                 .limit(50)
                 .forEach(n -> notesModel.addElement("[" + n.kind.label + "] " + n.text));
 

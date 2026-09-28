@@ -68,7 +68,8 @@ public final class ExampleProjectGenerator {
                 "linked from home", loginHtml, home.id);
 
         // ---- dashboard (reached via redirect after login) ----------------
-        String dashHtml = "<html><head><title>Dashboard</title></head><body>"
+        String dashHtml = "<html><head><title>Dashboard</title>"
+                + "<script src=/js/app.js></script></head><body>"
                 + "<nav><a href=/dashboard/profile>Profile</a>"
                 + "<a href=/dashboard/settings>Settings</a>"
                 + "<a href=/admin>Admin</a></nav>"
@@ -80,10 +81,11 @@ public final class ExampleProjectGenerator {
                 EntityType.PAGE, dash.id, "302 after successful auth");
 
         register(c, analyzer, "https://portal.acme.test/dashboard/profile", 200,
-                "linked from dashboard", "<html><head><title>Profile</title></head>"
+                "linked from dashboard", "<html><head><title>Profile</title>"
+                + "<script src=/js/app.js></script></head>"
                 + "<body><form action=/profile method=post>"
                 + "<input name=display_name type=text value=juniper></form></body></html>", dash.id);
-        register(c, analyzer, "https://portal.acme.test/search?q=test", 200,
+        register(c, analyzer, "https://portal.acme.test/search", 200,
                 "search form submission",
                 "<html><head><title>Search</title></head><body>"
                 + "<p>Results for <b>test</b></p></body></html>", dash.id);
@@ -120,7 +122,7 @@ public final class ExampleProjectGenerator {
         // ---- findings, wired to the components they involve --------------
         Vulnerability xss = c.createVulnerability(
                 "Reflected XSS via search parameter q", Vulnerability.Severity.HIGH,
-                "https://portal.acme.test/search?q=test");
+                "https://portal.acme.test/search");
         xss.affectedComponent = "search form, parameter q";
         xss.description = "The q parameter is reflected into the HTML response without "
                 + "output encoding, allowing script injection.";
@@ -141,6 +143,34 @@ public final class ExampleProjectGenerator {
         cookie.description = "The session cookie is issued without the Secure attribute.";
         cookie.remediation = "Set the Secure and HttpOnly attributes on session cookies.";
 
+        // ---- page variants of /search, and their differences (spec §12, §13) --
+        c.registerVariant(searchVariant("apple", "3"),
+                searchBody("apple", 3));
+        c.registerVariant(searchVariant("banana", "5"),
+                searchBody("banana", 5));
+        c.registerVariant(searchVariant("admin", "0"),
+                "<html><head><title>Search</title></head><body>"
+                + "<p>No results for <b>admin</b></p><p class=note>Access denied</p></body></html>");
+
+        // ---- interesting strings for wordlists (spec §8) -----------------
+        c.addInterestingString("admin", InterestingString.Category.USERNAMES,
+                dash.id, "nav link /admin", "<a href=/admin>Admin</a>", "");
+        c.addInterestingString("administrator", InterestingString.Category.USERNAMES, null, "", "", "");
+        c.addInterestingString("/dashboard/settings", InterestingString.Category.DIRECTORIES,
+                dash.id, "nav link", "", "");
+        c.addInterestingString("_token", InterestingString.Category.PARAMETERS,
+                login.id, "hidden input", "", "CSRF token field name");
+        c.addInterestingString("XSRF-TOKEN", InterestingString.Category.TECHNOLOGY_SPECIFIC,
+                null, "cookie", "", "Laravel CSRF cookie");
+        c.exportWordlists();
+
+        // ---- an annotated screenshot (spec §9) ---------------------------
+        Screenshot annotated = c.addScreenshot(dash.id,
+                screenshot("DASHBOARD", "admin link visible", new Color(0x0d, 0x12, 0x10)),
+                "Admin link visible to a standard user", 2, null);
+        c.addAnnotation(annotated.id, 40, 30, 220, 40,
+                "Admin link", "Shown to a non-admin session — verify access control", null);
+
         c.saveAndGenerate();
         System.out.println("Example project written to " + out.toAbsolutePath());
         System.out.println("Open " + out.toAbsolutePath().resolve("index.html") + " in a browser.");
@@ -152,12 +182,49 @@ public final class ExampleProjectGenerator {
         reg.url = url;
         reg.method = "GET";
         reg.statusCode = status;
-        reg.contentType = body.startsWith("{") ? "application/json" : "text/html";
+        boolean json = body.startsWith("{");
+        reg.contentType = json ? "application/json" : "text/html";
         reg.discoverySource = discovery;
+        reg.discoverySourceKind = kindFor(discovery);
         reg.parentPageId = parentId;
+        // Realistic response headers so automatic technology detection has
+        // header/cookie evidence to work from (spec §5).
+        reg.responseHeaders = List.of(
+                "Server: nginx/1.25.3",
+                "X-Powered-By: PHP/8.2.11",
+                "Set-Cookie: laravel_session=eyJ; path=/; HttpOnly",
+                "Set-Cookie: XSRF-TOKEN=abc; path=/",
+                "Content-Type: " + reg.contentType);
         reg.discovered = analyzer.analyze(body, url);
         reg.pageSource = body;
         return c.registerPage(reg);
+    }
+
+    private static PageVariant searchVariant(String q, String label) {
+        PageVariant v = new PageVariant();
+        v.url = "https://portal.acme.test/search";
+        v.method = "GET";
+        v.label = "q=" + q;
+        v.queryParams.put("q", q);
+        v.statusCode = 200;
+        v.contentType = "text/html";
+        return v;
+    }
+
+    private static String searchBody(String q, int rows) {
+        StringBuilder li = new StringBuilder();
+        for (int i = 0; i < rows; i++) li.append("<li>match ").append(i).append("</li>");
+        return "<html><head><title>Search: " + q + "</title></head><body>"
+                + "<p>Results for <b>" + q + "</b></p><ul>" + li + "</ul></body></html>";
+    }
+
+    private static com.assessmentnotebook.model.DiscoverySource kindFor(String detail) {
+        String d = detail.toLowerCase();
+        if (d.contains("redirect")) return com.assessmentnotebook.model.DiscoverySource.HTTP_REDIRECT;
+        if (d.contains("linked")) return com.assessmentnotebook.model.DiscoverySource.LINK_FROM_PAGE;
+        if (d.contains("form")) return com.assessmentnotebook.model.DiscoverySource.FORM_SUBMISSION;
+        if (d.contains("xhr")) return com.assessmentnotebook.model.DiscoverySource.XHR_FETCH;
+        return com.assessmentnotebook.model.DiscoverySource.DIRECT_NAVIGATION;
     }
 
     /** Render a small retro-styled placeholder PNG so the example needs no external images. */

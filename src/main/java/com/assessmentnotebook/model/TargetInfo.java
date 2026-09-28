@@ -12,5 +12,9 @@ public class TargetInfo {
     public String assessmentName = "";
     /** Free-form date string (the tester decides the format). */
     public String assessmentDate = "";
+    /** Summary fields the setup wizard (spec §4) fills, editable afterward. */
+    public String server = "";
+    public String frameworks = "";
+    public String authentication = "";
     public String notes = "";
 }

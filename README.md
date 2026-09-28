@@ -37,6 +37,20 @@ to a project directory on your disk.
 - **Retro-futuristic phosphor theme** across both the Burp panel and the
   generated documentation, so the tool reads as one system.
 
+### v1.1 additions
+- **Keyboard capture via menu mnemonics** (no global hotkeys), a **project setup
+  wizard**, and **automatic technology detection** with a confidence/evidence
+  model that updates records instead of duplicating them.
+- **Canonical resources**: one file/endpoint is one record with many loaders,
+  even when discovered many ways (fixes JS relationship duplication).
+- **Structured, inferred discovery source**; **interesting-string wordlists**;
+  **screenshot annotations**; **page variants with dynamic diffing**; and
+  **quick, non-destructive parameter probing** (incl. JSON parameters) whose
+  results save into the project. See [`docs/ASSESSMENT.md`](docs/ASSESSMENT.md)
+  and [`RELEASE_NOTES.md`](RELEASE_NOTES.md). A full walkthrough of every
+  capability, plus how the lab project was produced, is in
+  [`docs/GUIDE.md`](docs/GUIDE.md).
+
 Every section of the original specification maps to a feature; see
 [`docs/WORKFLOW.md`](docs/WORKFLOW.md) and [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
 

@@ -76,3 +76,54 @@ open it on a machine without Burp — it is the raw material for the report.
   and stable ids mean links are never broken by new discoveries.
 - Screenshots and source are stored as files and referenced by relative path;
   copying the project directory copies everything.
+
+## v1.1 workflows
+
+### Keyboard-driven capture
+
+Right-click a request → **Assessment Notebook**. Each action has an underlined
+**mnemonic letter** (Register **P**age, **M**ark Interesting String, **T**est
+Parameter, ...): open the submenu, then press the letter. The extension sets no
+global shortcuts and no menu accelerators — those would not fire on Burp's
+context menu and would collide with Burp's own chords (e.g. `Ctrl+Shift+P` opens
+Burp's Proxy tab).
+
+### Guided project setup
+
+Tab → **Project Setup…** opens a wizard that explains every field and pre-fills
+Domain, Main URL, Server and Frameworks from the traffic captured so far. Edit
+anything and save; re-run it any time to re-detect.
+
+### Automatic technology detection
+
+Every page you register is scanned for technologies (headers, cookies, meta
+tags, script/link URLs). Results appear in the overview's technologies table
+with confidence and evidence. Detection updates existing records in place
+(upgrading versions, raising confidence, logging history); your manual edits are
+never overwritten.
+
+### Interesting strings and wordlists
+
+Select text in any Burp editor → **Mark Interesting String…**, pick a category
+(usernames, directories, parameters, ...). **Export Wordlists** writes
+`wordlists/<category>.txt` for use by other authorized tools.
+
+### Page variants and dynamic differences
+
+Register the same URL under different conditions with **Register as Page
+Variant…** (right-click a request); the page document
+lists them and shows, against the first as a baseline, which inputs changed and
+which behavior changed (status, length, title, structure, reflected inputs).
+
+### Quick parameter testing
+
+Right-click a request → **Test Parameter…**, choose a query/body/JSON parameter
+and a set of non-destructive probes, confirm authorization, and run. Each result
+is characterized conservatively (observed behavior / potential issue — never
+auto-confirmed) and saved to the project; promote a real one to a finding.
+
+### Screenshot annotations
+
+After **Capture Screenshot…**, choose to annotate: drag red boxes around
+elements and label them. They render as a scalable overlay in the docs and are
+report-ready.
