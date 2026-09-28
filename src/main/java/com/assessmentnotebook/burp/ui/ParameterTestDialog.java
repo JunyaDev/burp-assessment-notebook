@@ -84,16 +84,22 @@ public final class ParameterTestDialog extends JDialog {
         top.add(params);
         content.add(top, BorderLayout.NORTH);
 
+        Set<ProbeGenerator.Kind> def = ProbeGenerator.defaultKinds();
         JPanel probes = new JPanel(new GridLayout(0, 2, 4, 2));
         probes.setBorder(RetroTheme.panelBorder(api, "PROBES (non-destructive)"));
-        Set<ProbeGenerator.Kind> def = ProbeGenerator.defaultKinds();
+        JPanel sqli = new JPanel(new GridLayout(0, 2, 4, 2));
+        sqli.setBorder(RetroTheme.panelBorder(api, "SQL INJECTION (read-only, opt-in)"));
         for (ProbeGenerator.Kind k : ProbeGenerator.Kind.values()) {
-            JCheckBox cb = new JCheckBox(k.label, def.contains(k));
+            JCheckBox cb = new JCheckBox(k.label, !k.sqli && def.contains(k));
             cb.putClientProperty("kind", k);
             probeBoxes.add(cb);
-            probes.add(cb);
+            (k.sqli ? sqli : probes).add(cb);
         }
-        content.add(probes, BorderLayout.CENTER);
+        JPanel groups = new JPanel();
+        groups.setLayout(new BoxLayout(groups, BoxLayout.Y_AXIS));
+        groups.add(probes);
+        groups.add(sqli);
+        content.add(groups, BorderLayout.CENTER);
 
         JPanel south = new JPanel(new BorderLayout());
         RetroTheme.accent(authorized, RetroTheme.Accent.WARN);

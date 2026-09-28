@@ -2,6 +2,8 @@ package com.assessmentnotebook;
 
 import com.assessmentnotebook.analyze.ParameterAnalysis;
 import com.assessmentnotebook.analyze.ProbeGenerator;
+import com.assessmentnotebook.analyze.SqlErrorSignature;
+import java.util.EnumSet;
 import com.assessmentnotebook.core.NotebookController;
 import com.assessmentnotebook.model.ParameterTest;
 import com.assessmentnotebook.model.Vulnerability;
@@ -82,5 +84,38 @@ class ParameterAnalysisTest {
         t.responseStatus = status; t.responseLength = len;
         t.reflected = reflected;
         return t;
+    }
+
+    @Test void sqliProbesAreOptInWithTheExpectedPayloads() {
+        // Not in the default set.
+        for (ProbeGenerator.Probe p : ProbeGenerator.generate("x")) {
+            assertFalse(p.kind.sqli, "SQLi probe leaked into the default set: " + p.kind);
+        }
+        // Generated in send order with the right payloads when requested.
+        List<ProbeGenerator.Probe> sqli = ProbeGenerator.generate("x",
+                EnumSet.copyOf(ProbeGenerator.sqliKinds()));
+        java.util.List<String> values = new java.util.ArrayList<>();
+        for (ProbeGenerator.Probe p : sqli) { assertTrue(p.kind.sqli); values.add(p.value); }
+        assertEquals(java.util.List.of("'", "''", "'--", "'#", "' OR '1'='1", "' OR 1=1--"), values);
+    }
+
+    @Test void sqlErrorSignatureDetectsCommonEngines() {
+        assertTrue(SqlErrorSignature.matches(
+                "{\"code\":\"SQLITE_ERROR\",\"message\":\"unrecognized token\"}"));
+        assertTrue(SqlErrorSignature.matches("You have an error in your SQL syntax near"));
+        assertTrue(SqlErrorSignature.matches("org.postgresql.util.PSQLException: ..."));
+        assertFalse(SqlErrorSignature.matches("Invalid email or password."));
+        assertFalse(SqlErrorSignature.matches(""));
+    }
+
+    @Test void sqlErrorFlagIsClassifiedAsPotentialIssue() {
+        ParameterTest t = new ParameterTest();
+        t.probeKind = "SQL_QUOTE";
+        t.baselineStatus = 401; t.responseStatus = 500;
+        t.baselineLength = 26; t.responseLength = 1183;
+        t.sqlErrorSignature = true;
+        ParameterAnalysis.characterize(t);
+        assertEquals(ParameterTest.Classification.POTENTIAL_ISSUE, t.classification);
+        assertTrue(t.observation.contains("SQL error signature"), t.observation);
     }
 }

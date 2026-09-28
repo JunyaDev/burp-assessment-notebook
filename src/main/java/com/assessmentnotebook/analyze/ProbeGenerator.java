@@ -30,10 +30,22 @@ public final class ProbeGenerator {
         BOUNDARY_MAX("Boundary: long length"),
         SPECIAL_CHARS("Special characters"),
         QUOTE_CANARY("Quote reflection canary"),
-        MARKUP_CANARY("Markup reflection canary");
+        MARKUP_CANARY("Markup reflection canary"),
+        // SQL injection probes: read-only, no state change. Meant to be sent as a
+        // sequence — break the query with a lone quote, stabilize it, then test a
+        // boolean bypass — so a SQL error and its disappearance are both visible.
+        SQL_QUOTE("SQLi: single quote  '", true),
+        SQL_QUOTE_DOUBLED("SQLi: doubled quote  ''", true),
+        SQL_COMMENT_DASH("SQLi: quote + comment  '--", true),
+        SQL_COMMENT_HASH("SQLi: quote + hash  '#", true),
+        SQL_OR_TRUE("SQLi: boolean  ' OR '1'='1", true),
+        SQL_OR_TRUE_COMMENT("SQLi: boolean  ' OR 1=1--", true);
 
         public final String label;
-        Kind(String label) { this.label = label; }
+        /** True for SQL-injection probes: opt-in, shown in their own group. */
+        public final boolean sqli;
+        Kind(String label) { this(label, false); }
+        Kind(String label, boolean sqli) { this.label = label; this.sqli = sqli; }
     }
 
     /** A single probe: the kind, a human label, and either a value or omission. */
@@ -61,6 +73,13 @@ public final class ProbeGenerator {
                 Kind.QUOTE_CANARY, Kind.MARKUP_CANARY);
     }
 
+    /** The SQL-injection probe set, in send order. Opt-in; never in the default. */
+    public static java.util.List<Kind> sqliKinds() {
+        java.util.List<Kind> out = new ArrayList<>();
+        for (Kind k : Kind.values()) if (k.sqli) out.add(k);
+        return out;
+    }
+
     public static List<Probe> generate(String original) {
         return generate(original, defaultKinds());
     }
@@ -85,6 +104,13 @@ public final class ProbeGenerator {
                 // Reflection canaries: distinctive, inert markers (no executable payload).
                 case QUOTE_CANARY:  out.add(new Probe(k, "anbq7'\"x", false)); break;
                 case MARKUP_CANARY: out.add(new Probe(k, "anb<z7>x", false)); break;
+                // SQL injection probes (read-only auth/boolean tests, no mutation).
+                case SQL_QUOTE:            out.add(new Probe(k, "'", false)); break;
+                case SQL_QUOTE_DOUBLED:    out.add(new Probe(k, "''", false)); break;
+                case SQL_COMMENT_DASH:     out.add(new Probe(k, "'--", false)); break;
+                case SQL_COMMENT_HASH:     out.add(new Probe(k, "'#", false)); break;
+                case SQL_OR_TRUE:          out.add(new Probe(k, "' OR '1'='1", false)); break;
+                case SQL_OR_TRUE_COMMENT:  out.add(new Probe(k, "' OR 1=1--", false)); break;
                 default: break;
             }
         }

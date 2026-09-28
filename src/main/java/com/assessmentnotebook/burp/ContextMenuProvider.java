@@ -6,6 +6,7 @@ import burp.api.montoya.ui.contextmenu.ContextMenuEvent;
 import burp.api.montoya.ui.contextmenu.ContextMenuItemsProvider;
 import com.assessmentnotebook.burp.ui.BurpUi;
 import com.assessmentnotebook.burp.ui.RegisterPageDialog;
+import com.assessmentnotebook.burp.ui.JsScanDialog;
 import com.assessmentnotebook.burp.ui.RegisterResourceDialog;
 import com.assessmentnotebook.burp.ui.ScreenshotAnnotator;
 import com.assessmentnotebook.core.NotebookController;
@@ -58,6 +59,8 @@ public final class ContextMenuProvider implements ContextMenuItemsProvider {
         menu.add(action("Register Element from selection…", 'E',
                 () -> registerElement(rr, selectedText), true));
         menu.add(action("Test Parameter (quick probes)…", 'T', () -> testParameter(rr), rr != null));
+        menu.add(action("Scan JS for interesting data…", 'J', () -> scanJs(rr),
+                rr != null && rr.hasResponse()));
         menu.add(action("Create Vulnerability…", 'V', () -> createVulnerability(rr), true));
         menu.add(action("Capture Screenshot…", 'S', () -> captureScreenshot(rr), true));
         menu.addSeparator();
@@ -284,20 +287,63 @@ public final class ContextMenuProvider implements ContextMenuItemsProvider {
 
     private void createVulnerability(HttpRequestResponse rr) {
         if (!requireProject()) return;
-        JTextField title = new JTextField(28);
+        JTextField title = new JTextField(32);
         JComboBox<Vulnerability.Severity> sev = new JComboBox<>(Vulnerability.Severity.values());
         sev.setSelectedItem(Vulnerability.Severity.MEDIUM);
-        JTextField url = new JTextField(rr != null ? rr.request().url() : "", 28);
-        JPanel panel = new JPanel(new java.awt.GridLayout(0, 1, 4, 4));
-        panel.add(new JLabel("Title:"));
-        panel.add(title);
-        panel.add(new JLabel("Severity:"));
-        panel.add(sev);
-        panel.add(new JLabel("Affected URL:"));
-        panel.add(url);
-        if (!BurpUi.confirm(api, panel, "Create Vulnerability") || title.getText().isBlank()) return;
-        run(() -> session.controller().createVulnerability(title.getText().trim(),
-                (Vulnerability.Severity) sev.getSelectedItem(), url.getText().trim()));
+        JComboBox<Vulnerability.Status> status = new JComboBox<>(Vulnerability.Status.values());
+        status.setSelectedItem(Vulnerability.Status.OPEN);
+        JTextField url = new JTextField(rr != null ? rr.request().url() : "", 32);
+        String comp = rr != null ? rr.request().method() + " " + rr.request().path() : "";
+        JTextField component = new JTextField(comp, 32);
+        JTextArea description = new JTextArea(3, 32);
+        JTextArea observation = new JTextArea(3, 32);
+        JTextArea steps = new JTextArea(4, 32);
+        JTextArea impact = new JTextArea(3, 32);
+        JTextArea remediation = new JTextArea(3, 32);
+        JTextArea notes = new JTextArea(2, 32);
+
+        JPanel panel = new JPanel(new java.awt.GridBagLayout());
+        java.awt.GridBagConstraints g = new java.awt.GridBagConstraints();
+        g.gridx = 0; g.gridy = 0; g.anchor = java.awt.GridBagConstraints.WEST;
+        g.fill = java.awt.GridBagConstraints.HORIZONTAL; g.weightx = 1; g.insets = new java.awt.Insets(2, 2, 2, 2);
+        addField(panel, g, "Title:", title);
+        addField(panel, g, "Severity:", sev);
+        addField(panel, g, "Status:", status);
+        addField(panel, g, "Affected URL:", url);
+        addField(panel, g, "Component (method / path / field):", component);
+        addField(panel, g, "Description:", new JScrollPane(description));
+        addField(panel, g, "Technical observation:", new JScrollPane(observation));
+        addField(panel, g, "Steps to reproduce:", new JScrollPane(steps));
+        addField(panel, g, "Impact:", new JScrollPane(impact));
+        addField(panel, g, "Remediation:", new JScrollPane(remediation));
+        addField(panel, g, "Notes:", new JScrollPane(notes));
+        for (JTextArea a : new JTextArea[]{description, observation, steps, impact, remediation, notes}) {
+            a.setLineWrap(true); a.setWrapStyleWord(true);
+        }
+        JScrollPane scroll = new JScrollPane(panel);
+        scroll.setPreferredSize(new java.awt.Dimension(560, 560));
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+
+        if (!BurpUi.confirm(api, scroll, "Create Vulnerability") || title.getText().isBlank()) return;
+        Vulnerability v = new Vulnerability();
+        v.title = title.getText().trim();
+        v.severity = (Vulnerability.Severity) sev.getSelectedItem();
+        v.status = (Vulnerability.Status) status.getSelectedItem();
+        v.affectedUrl = url.getText().trim();
+        v.affectedComponent = component.getText().trim();
+        v.description = description.getText().trim();
+        v.technicalObservation = observation.getText().trim();
+        v.stepsToReproduce = steps.getText().trim();
+        v.impact = impact.getText().trim();
+        v.remediation = remediation.getText().trim();
+        v.notes = notes.getText().trim();
+        run(() -> session.controller().createVulnerability(v));
+    }
+
+    /** Add a "label above component" row to a GridBag panel and advance the row. */
+    private static void addField(JPanel panel, java.awt.GridBagConstraints g, String label, JComponent field) {
+        g.gridy++; panel.add(new JLabel(label), g);
+        g.gridy++; panel.add(field, g);
     }
 
     private void captureScreenshot(HttpRequestResponse rr) {
@@ -372,6 +418,35 @@ public final class ContextMenuProvider implements ContextMenuItemsProvider {
     }
 
     // ---- helpers ---------------------------------------------------------
+
+    private void scanJs(HttpRequestResponse rr) {
+        if (!requireProject()) return;
+        if (rr == null || !rr.hasResponse()) {
+            BurpUi.info(api, "Select a JavaScript response to scan.");
+            return;
+        }
+        final String url = rr.request().url();
+        final String body = rr.response().bodyToString();
+        new SwingWorker<java.util.List<com.assessmentnotebook.analyze.JsScanner.Match>, Void>() {
+            @Override protected java.util.List<com.assessmentnotebook.analyze.JsScanner.Match>
+                    doInBackground() {
+                return com.assessmentnotebook.analyze.JsScanner.scan(body);
+            }
+            @Override protected void done() {
+                try {
+                    var matches = get();
+                    if (matches.isEmpty()) {
+                        BurpUi.info(api, "No interesting data found in this script.");
+                        return;
+                    }
+                    new JsScanDialog(api, session, url, body, matches).setVisible(true);
+                } catch (Exception ex) {
+                    api.logging().logToError("JS scan failed", ex);
+                    BurpUi.error(api, "Scan failed: " + ex.getMessage());
+                }
+            }
+        }.execute();
+    }
 
     private Page matchPage(HttpRequestResponse rr) {
         NotebookController c = session.controller();

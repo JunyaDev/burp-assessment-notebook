@@ -40,6 +40,8 @@ public final class HtmlGenerator {
     private final Map<String, List<Interaction>> interactionsByPage = new HashMap<>();
     private final Map<String, List<PageVariant>> variantsByPage = new HashMap<>();
     private final Map<String, List<ParameterTest>> testsByParameter = new HashMap<>();
+    private final Map<String, List<ParameterTest>> testsByPage = new HashMap<>();
+    private final Map<String, List<com.assessmentnotebook.model.JsFinding>> jsFindingsByResource = new HashMap<>();
     private final Map<String, List<Note>> notesByTarget = new HashMap<>();
 
     public HtmlGenerator(Project project, ProjectLayout layout) {
@@ -51,6 +53,9 @@ public final class HtmlGenerator {
         for (Interaction a : project.interactions) group(interactionsByPage, a.pageId, a);
         for (PageVariant v : project.variants) group(variantsByPage, v.pageId, v);
         for (ParameterTest t : project.parameterTests) group(testsByParameter, t.parameterId, t);
+        for (ParameterTest t : project.parameterTests) group(testsByPage, t.pageId, t);
+        for (com.assessmentnotebook.model.JsFinding jf : project.jsFindings)
+            group(jsFindingsByResource, jf.resourceId, jf);
         for (Note n : project.notes) group(notesByTarget, n.targetType + ":" + n.targetId, n);
     }
 
@@ -377,6 +382,9 @@ public final class HtmlGenerator {
             b.append("</ul>").append(panelClose());
         }
 
+        // Findings that affect this page (inbound AFFECTS edges from vulnerabilities).
+        appendPageFindings(b, p, up);
+
         // Screenshots as a stepped sequence.
         List<Screenshot> shots = of(screenshotsByPage, p.id).stream()
                 .sorted(Comparator.comparingInt(s -> s.sequence)).toList();
@@ -476,6 +484,15 @@ public final class HtmlGenerator {
         }
         b.append(panelClose());
 
+        // Interesting data discovered in the scripts this page loads.
+        List<com.assessmentnotebook.model.JsFinding> pageJs = new java.util.ArrayList<>();
+        for (String rid : p.resourceIds) pageJs.addAll(of(jsFindingsByResource, rid));
+        appendJsFindings(b, "DISCOVERED IN SCRIPTS", pageJs, up, true);
+
+        // Parameter tests that were run against this page but are not tied to a
+        // documented form parameter (e.g. JSON/XHR fields) — otherwise invisible.
+        appendPageParameterTests(b, p.id);
+
         // Variants and the differences between them (spec §12, §13).
         appendVariants(b, p, up);
 
@@ -488,6 +505,100 @@ public final class HtmlGenerator {
 
         b.append(notesPanel(EntityType.PAGE, p.id));
         return shell(shortUrl(p.url) + " // page", up, b.toString(), "page");
+    }
+
+    /**
+     * Render JS-scan findings grouped by kind. When {@code linkResource} is true
+     * (the page view) each row links to the script it was found in, so material
+     * is listed by the page where it was discovered.
+     */
+    private void appendJsFindings(StringBuilder b, String title,
+            List<com.assessmentnotebook.model.JsFinding> findings, String up, boolean linkResource) {
+        if (findings == null || findings.isEmpty()) return;
+        java.util.LinkedHashMap<com.assessmentnotebook.model.JsFinding.Kind,
+                List<com.assessmentnotebook.model.JsFinding>> byKind = new java.util.LinkedHashMap<>();
+        for (var k : com.assessmentnotebook.model.JsFinding.Kind.values()) {
+            List<com.assessmentnotebook.model.JsFinding> in = new java.util.ArrayList<>();
+            for (var f : findings) if (f.kind == k) in.add(f);
+            if (!in.isEmpty()) byKind.put(k, in);
+        }
+        b.append(panelOpen(title + " (" + findings.size() + ")"));
+        for (var entry : byKind.entrySet()) {
+            b.append("<h4>").append(esc(entry.getKey().label)).append("</h4>");
+            b.append("<table class=\"grid\"><thead><tr><th>Value</th><th>Why</th><th>Line</th>");
+            if (linkResource) b.append("<th>Script</th>");
+            b.append("<th>Context</th></tr></thead><tbody>");
+            for (var f : entry.getValue()) {
+                b.append("<tr><td><code>").append(esc(f.value)).append("</code></td><td>")
+                        .append(orDash(f.detail)).append("</td><td>")
+                        .append(f.lineNumber == 0 ? "—" : String.valueOf(f.lineNumber)).append("</td>");
+                if (linkResource) {
+                    Resource r = project.findResource(f.resourceId);
+                    String dir = r != null && isCodeResource(r) ? "scripts/" : "files/";
+                    b.append("<td>").append(f.resourceId == null ? "—"
+                            : "<a href=\"" + up + dir + f.resourceId + ".html\">"
+                              + esc(f.resourceId) + "</a>").append("</td>");
+                }
+                b.append("<td class=\"dim\"><code>").append(orDash(f.context))
+                        .append("</code></td></tr>");
+            }
+            b.append("</tbody></table>");
+        }
+        b.append(panelClose());
+    }
+
+    /** Vulnerabilities that affect this page, from inbound AFFECTS edges. */
+    private void appendPageFindings(StringBuilder b, Page p, String up) {
+        List<Relationship> in = graph.incoming(EntityType.PAGE, p.id);
+        List<Vulnerability> findings = new java.util.ArrayList<>();
+        for (Relationship e : in) {
+            if (Relationship.AFFECTS.equals(e.kind) && e.fromType == EntityType.VULNERABILITY) {
+                Vulnerability v = project.findVulnerability(e.fromId);
+                if (v != null && !findings.contains(v)) findings.add(v);
+            }
+        }
+        if (findings.isEmpty()) return;
+        b.append(panelOpen("FINDINGS AFFECTING THIS PAGE (" + findings.size() + ")"));
+        b.append("<table class=\"grid\"><thead><tr><th>Finding</th><th>Severity</th>"
+                + "<th>Status</th><th>Title</th></tr></thead><tbody>");
+        for (Vulnerability v : findings) {
+            b.append("<tr><td><a href=\"").append(up).append("vulnerabilities/").append(v.id)
+                    .append(".html\">").append(esc(v.id)).append("</a></td><td>")
+                    .append(severityBadge(v.severity)).append("</td><td>")
+                    .append(esc(v.status.label)).append("</td><td>").append(orDash(v.title))
+                    .append("</td></tr>");
+        }
+        b.append("</tbody></table>").append(panelClose());
+    }
+
+    /** Page-scoped parameter tests with no form parameter to hang them on. */
+    private void appendPageParameterTests(StringBuilder b, String pageId) {
+        List<com.assessmentnotebook.model.ParameterTest> all = of(testsByPage, pageId);
+        List<com.assessmentnotebook.model.ParameterTest> orphan = new java.util.ArrayList<>();
+        for (var t : all) {
+            if (t.parameterId == null || t.parameterId.isBlank()) orphan.add(t);
+        }
+        if (orphan.isEmpty()) return;
+        // Group by the tested field name so each parameter reads as one block.
+        java.util.LinkedHashMap<String, List<com.assessmentnotebook.model.ParameterTest>> byName =
+                new java.util.LinkedHashMap<>();
+        for (var t : orphan) {
+            byName.computeIfAbsent(t.parameterName == null ? "" : t.parameterName,
+                    k -> new java.util.ArrayList<>()).add(t);
+        }
+        b.append(panelOpen("PARAMETER TESTS"));
+        for (var entry : byName.entrySet()) {
+            String name = entry.getKey();
+            var tests = entry.getValue();
+            String src = tests.isEmpty() ? "" : " <span class=\"muted\">"
+                    + esc(tests.get(0).source.name().toLowerCase(java.util.Locale.ROOT))
+                    + " parameter</span>";
+            b.append("<div class=\"param\"><h4>").append(orDash(name.isBlank() ? null : name))
+                    .append(src).append("</h4>");
+            appendTestTable(b, tests);
+            b.append("</div>");
+        }
+        b.append(panelClose());
     }
 
     private void appendVariants(StringBuilder b, Page p, String up) {
@@ -528,6 +639,18 @@ public final class HtmlGenerator {
                     b.append("<li><code>").append(esc(d)).append("</code></li>");
                 }
                 b.append("</ul></div>");
+            }
+            b.append(panelClose());
+        }
+
+        // Captured response body for each variant (previously saved but never shown).
+        boolean anyBody = vs.stream().anyMatch(v -> v.sourceFile != null && !v.sourceFile.isBlank());
+        if (anyBody) {
+            b.append(panelOpen("VARIANT RESPONSES"));
+            for (com.assessmentnotebook.model.PageVariant v : vs) {
+                if (v.sourceFile == null || v.sourceFile.isBlank()) continue;
+                b.append("<h4>").append(orDash(label(v))).append("</h4>");
+                b.append(embeddedSource(v.sourceFile, up));
             }
             b.append(panelClose());
         }
@@ -654,6 +777,13 @@ public final class HtmlGenerator {
         if (tags.length() > 0) {
             b.append("<p class=\"dim\">Summary: ").append(esc(tags.toString().trim())).append("</p>");
         }
+        appendTestTable(b, tests);
+        b.append("</div>");
+    }
+
+    /** Shared Probe/Sent/Status/Length/Observation/Class table. */
+    private void appendTestTable(StringBuilder b,
+            List<com.assessmentnotebook.model.ParameterTest> tests) {
         b.append("<table class=\"grid\"><thead><tr><th>Probe</th><th>Sent</th><th>Status</th>"
                 + "<th>Length</th><th>Observation</th><th>Class</th></tr></thead><tbody>");
         for (com.assessmentnotebook.model.ParameterTest t : tests) {
@@ -664,7 +794,7 @@ public final class HtmlGenerator {
                     .append(orDash(t.observation)).append("</td><td>").append(esc(cls))
                     .append("</td></tr>");
         }
-        b.append("</tbody></table></div>");
+        b.append("</tbody></table>");
     }
 
     // ============================================================ resource
@@ -685,6 +815,8 @@ public final class HtmlGenerator {
             b.append(embeddedSource(r.sourceFile, up));
             b.append(panelClose());
         }
+
+        appendJsFindings(b, "DISCOVERED IN THIS SCRIPT", of(jsFindingsByResource, r.id), up, false);
 
         b.append(panelOpen("LOADED BY"));
         if (r.pageIds.isEmpty()) {

@@ -3,10 +3,13 @@ package com.assessmentnotebook.burp;
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.HttpHeader;
 import burp.api.montoya.http.message.HttpRequestResponse;
+import burp.api.montoya.http.message.params.ParsedHttpParameter;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import com.assessmentnotebook.analyze.DiscoverySourceInference;
+import com.assessmentnotebook.analyze.DiscoveredPage;
 import com.assessmentnotebook.analyze.HtmlAnalyzer;
+import com.assessmentnotebook.analyze.JsonRequestForm;
 import com.assessmentnotebook.core.PageRegistration;
 
 import java.nio.charset.StandardCharsets;
@@ -60,11 +63,59 @@ public final class RequestExtractor {
             reg.discovered.title = "";
         }
 
+        // Document the request's own parameters as a form, so JSON/XHR endpoints
+        // (which have no HTML <form>) still expose their fields — this is what
+        // lets parameter probes attach to e.g. a JSON login field and render.
+        DiscoveredPage.DiscoveredForm reqForm = requestParamForm(request, reg.url);
+        if (reqForm != null) reg.discovered.forms.add(reqForm);
+
         DiscoverySourceInference.Result guess =
                 DiscoverySourceInference.infer(reg.method, reg.requestHeaders, toolName);
         reg.discoverySourceKind = guess.kind;
         reg.discoverySource = guess.detail;
         return reg;
+    }
+
+    /**
+     * Build a documentable form from the request's own parameters: JSON body
+     * fields (flattened) when the request is JSON, otherwise its query and body
+     * parameters. Returns null when the request carries no parameters.
+     */
+    private DiscoveredPage.DiscoveredForm requestParamForm(HttpRequest request, String url) {
+        String ct = requestContentType(request);
+        if (ct != null && ct.toLowerCase().contains("json")) {
+            return JsonRequestForm.build(url, request.method(), request.bodyToString());
+        }
+        DiscoveredPage.DiscoveredForm df = new DiscoveredPage.DiscoveredForm();
+        df.action = url;
+        df.method = request.method();
+        df.encType = ct == null ? "" : ct;
+        df.identifier = "request parameters";
+        try {
+            for (ParsedHttpParameter p : request.parameters()) {
+                String type;
+                switch (p.type()) {
+                    case URL:  type = "query"; break;
+                    case BODY: type = "body"; break;
+                    default:   continue; // cookies etc. are not request parameters here
+                }
+                DiscoveredPage.DiscoveredInput in = new DiscoveredPage.DiscoveredInput();
+                in.name = p.name();
+                in.type = type;
+                in.value = p.value();
+                df.inputs.add(in);
+            }
+        } catch (RuntimeException ignored) { /* no parsable params */ }
+        return df.inputs.isEmpty() ? null : df;
+    }
+
+    private static String requestContentType(HttpRequest request) {
+        try {
+            for (HttpHeader h : request.headers()) {
+                if ("content-type".equalsIgnoreCase(h.name())) return h.value();
+            }
+        } catch (RuntimeException ignored) { }
+        return null;
     }
 
     /**

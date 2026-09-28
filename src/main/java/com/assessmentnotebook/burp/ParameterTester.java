@@ -77,8 +77,10 @@ public final class ParameterTester {
                 HttpResponse r = api.http().sendRequest(modified).response();
                 int status = r == null ? 0 : r.statusCode();
                 int len = r == null ? 0 : bodyLength(r);
+                String respBody = r == null ? "" : r.bodyToString();
                 boolean reflected = probe.value != null && probe.value.length() >= 3
-                        && r != null && r.bodyToString().contains(probe.value);
+                        && respBody.contains(probe.value);
+                boolean sqlError = com.assessmentnotebook.analyze.SqlErrorSignature.matches(respBody);
 
                 ParameterTest t = new ParameterTest();
                 t.parameterName = paramName;
@@ -93,6 +95,7 @@ public final class ParameterTester {
                 t.responseStatus = status;
                 t.responseLength = len;
                 t.reflected = reflected;
+                t.sqlErrorSignature = sqlError;
                 out.add(t);
             } catch (RuntimeException e) {
                 api.logging().logToError("Probe " + probe.label + " failed: " + e.getMessage());

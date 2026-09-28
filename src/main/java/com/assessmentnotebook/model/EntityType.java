@@ -25,7 +25,8 @@ public enum EntityType {
     INTERESTING_STRING("istr"),
     PAGE_VARIANT("var"),
     PARAM_TEST("ptest"),
-    ANNOTATION("anno");
+    ANNOTATION("anno"),
+    JS_FINDING("jsfind");
 
     /** Short slug used as the prefix of generated ids, e.g. {@code page-0007}. */
     public final String slug;

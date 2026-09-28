@@ -47,6 +47,18 @@ class TechnologyDetectionTest {
         assertEquals("17.1.0", ng.version);
     }
 
+    @Test void detectsAngularFromAppRootShellWithoutVersion() {
+        // Juice Shop and other client-rendered Angular SPAs ship a bare shell:
+        // <app-root> is present but ng-version is only added after bootstrap.
+        List<Detection> ds = det.detect("http://localhost:3001/",
+                List.of(), "<body><app-root></app-root>"
+                        + "<script src=\"main.js\"></script></body>", "text/html");
+        Detection ng = byName(ds, "Angular");
+        assertNotNull(ng);
+        assertEquals("", ng.version);
+        assertEquals(Technology.Confidence.MEDIUM, ng.confidence);
+    }
+
     @Test void detectsLibraryAndVersionFromScriptUrl() {
         List<Detection> ds = det.detect("https://s.test/",
                 List.of(), "<script src=\"/static/jquery-3.6.0.min.js\"></script>", "text/html");

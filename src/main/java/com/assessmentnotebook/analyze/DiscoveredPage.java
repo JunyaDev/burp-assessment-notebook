@@ -45,5 +45,14 @@ public class DiscoveredPage {
     public static class DiscoveredResource {
         public String url = "";
         public String type = "";           // SCRIPT, STYLESHEET, IMAGE, FONT, ...
+        /**
+         * Optional captured body for this resource. When present (the tester
+         * ticked "Capture resource bodies"), registration saves it as the
+         * resource's source copy so the notebook holds the actual asset, not
+         * just its URL. Left empty when only the identity is being recorded.
+         */
+        public String body = "";
+        /** Where {@link #body} came from, for the saved-copy provenance note. */
+        public String bodySource = "";     // e.g. "proxy history", "live fetch"
     }
 }

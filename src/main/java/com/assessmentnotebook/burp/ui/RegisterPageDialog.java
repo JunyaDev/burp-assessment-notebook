@@ -27,6 +27,8 @@ public final class RegisterPageDialog extends JDialog {
     private final List<JCheckBox> formBoxes = new ArrayList<>();
     private final List<JCheckBox> linkBoxes = new ArrayList<>();
     private final List<JCheckBox> resourceBoxes = new ArrayList<>();
+    private final JCheckBox captureBodies = new JCheckBox(
+            "Capture ticked resource bodies (Burp history; fetch any unseen)", false);
 
     public RegisterPageDialog(MontoyaApi api, NotebookSession session, PageRegistration reg) {
         super(BurpUi.owner(api), "Register Page", true);
@@ -73,7 +75,15 @@ public final class RegisterPageDialog extends JDialog {
         register.addActionListener(e -> commit());
         buttons.add(cancel);
         buttons.add(register);
-        content.add(buttons, BorderLayout.SOUTH);
+        captureBodies.setToolTipText("Save each ticked resource's actual content into "
+                + "the notebook, not just its URL. Uses the copy Burp already captured "
+                + "while you browsed; only resources never seen trigger a single GET.");
+        JPanel south = new JPanel(new BorderLayout());
+        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        left.add(captureBodies);
+        south.add(left, BorderLayout.WEST);
+        south.add(buttons, BorderLayout.EAST);
+        content.add(south, BorderLayout.SOUTH);
 
         setContentPane(content);
         RetroTheme.apply(api, content);
@@ -151,6 +161,11 @@ public final class RegisterPageDialog extends JDialog {
         setEnabled(false);
         new SwingWorker<Void, Void>() {
             @Override protected Void doInBackground() throws Exception {
+                if (captureBodies.isSelected() && reg.discovered != null) {
+                    // History first, live fetch as fallback (off the EDT).
+                    new com.assessmentnotebook.burp.ResourceBodyFetcher(api)
+                            .capture(reg.discovered, true);
+                }
                 session.controller().registerPage(reg);
                 return null;
             }

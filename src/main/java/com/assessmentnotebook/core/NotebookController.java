@@ -310,12 +310,21 @@ public final class NotebookController {
     private static String nz(String s) { return s == null ? "" : s; }
 
     private Resource registerResource(Page page, DiscoveredPage.DiscoveredResource dr,
-            String now, java.util.Map<String, Resource> index) {
+            String now, java.util.Map<String, Resource> index) throws IOException {
         Resource res = resolveResource(dr.url, parseType(dr.type), now, index);
         if (!res.pageIds.contains(page.id)) res.pageIds.add(page.id);
         if (!page.resourceIds.contains(res.id)) page.resourceIds.add(res.id);
         relate(EntityType.PAGE, page.id, Relationship.LOADS_RESOURCE,
                 EntityType.RESOURCE, res.id, "");
+        // If the tester captured the body, save it as this resource's source copy
+        // (once): re-registration with identical bytes does not write a duplicate.
+        if (dr.body != null && !dr.body.isBlank() && !sameAsResourceSource(res, dr.body)) {
+            res.sourceFile = store.saveSource(dr.body, resourceSourceFileName(res));
+            String prov = dr.bodySource == null || dr.bodySource.isBlank()
+                    ? "" : " (" + dr.bodySource + ")";
+            res.notes = appendLine(res.notes, now + "  body captured" + prov);
+            res.updatedAt = now;
+        }
         return res;
     }
 
@@ -505,6 +514,58 @@ public final class NotebookController {
         int cand = candidate.split("\\.").length;
         int cur = current.split("\\.").length;
         return cand > cur;
+    }
+
+    /**
+     * Record the interesting items found by scanning a JavaScript resource
+     * (endpoints, secrets, dangerous calls, exports, bypass hints). The script is
+     * resolved (or created) as a SCRIPT resource by URL, its body is saved as the
+     * captured source if provided, and each selected finding is stored and linked
+     * to the resource — which is itself linked to the pages that load it, so the
+     * findings surface both on the script's page and on every page that loads it.
+     * Findings duplicate-safe on (resource, kind, value).
+     */
+    public synchronized List<JsFinding> recordJsFindings(String scriptUrl, String pageId,
+            String jsBody, List<JsFinding> findings) throws IOException {
+        String now = Timestamps.now();
+        Resource res = resolveResource(scriptUrl, Resource.Type.SCRIPT, now, resourceIndex());
+        Page page = pageId == null ? null : project.findPage(pageId);
+        if (page != null) {
+            if (!res.pageIds.contains(page.id)) res.pageIds.add(page.id);
+            if (!page.resourceIds.contains(res.id)) page.resourceIds.add(res.id);
+            relate(EntityType.PAGE, page.id, Relationship.LOADS_RESOURCE,
+                    EntityType.RESOURCE, res.id, "");
+        }
+        if (jsBody != null && !jsBody.isBlank() && !sameAsResourceSource(res, jsBody)) {
+            res.sourceFile = store.saveSource(jsBody, resourceSourceFileName(res));
+        }
+        List<JsFinding> saved = new ArrayList<>();
+        for (JsFinding f : findings) {
+            f.resourceId = res.id;
+            if (jsFindingExists(res.id, f.kind, f.value)) continue;
+            f.id = project.nextId(EntityType.JS_FINDING);
+            f.timestamp = now;
+            project.jsFindings.add(f);
+            relate(EntityType.RESOURCE, res.id, Relationship.RELATES_TO,
+                    EntityType.JS_FINDING, f.id, "js finding");
+            saved.add(f);
+        }
+        final String rid = res.id;
+        final List<String> pages = new ArrayList<>(res.pageIds);
+        saveAndGenerate(g -> {
+            g.generateIndex();
+            g.generateResource(rid);
+            for (String pid : pages) g.generatePage(pid);
+        });
+        return saved;
+    }
+
+    private boolean jsFindingExists(String resourceId, JsFinding.Kind kind, String value) {
+        for (JsFinding f : project.jsFindings) {
+            if (resourceId.equals(f.resourceId) && f.kind == kind
+                    && java.util.Objects.equals(f.value, value)) return true;
+        }
+        return false;
     }
 
     /** Register a resource on its own (e.g. an API/XHR endpoint), not via a page. */
@@ -849,19 +910,37 @@ public final class NotebookController {
     public synchronized Vulnerability createVulnerability(String title, Vulnerability.Severity sev,
             String affectedUrl) throws IOException {
         Vulnerability v = new Vulnerability();
-        v.id = project.nextId(EntityType.VULNERABILITY);
         v.title = title;
         v.severity = sev;
         v.affectedUrl = affectedUrl;
+        return createVulnerability(v);
+    }
+
+    /**
+     * Persist a fully-formed finding (all fields set by the caller), assign its
+     * id/timestamps, and link it to a page at the same URL if one exists. Used
+     * by the expanded "Create Vulnerability" dialog so every documented field —
+     * component, description, technical observation, steps, impact, remediation,
+     * status, notes — is captured, not just title/severity/URL.
+     */
+    public synchronized Vulnerability createVulnerability(Vulnerability v) throws IOException {
+        v.id = project.nextId(EntityType.VULNERABILITY);
+        if (v.severity == null) v.severity = Vulnerability.Severity.INFO;
+        if (v.status == null) v.status = Vulnerability.Status.OPEN;
         v.createdAt = v.updatedAt = Timestamps.now();
         project.vulnerabilities.add(v);
         // Link the finding to a page at the same URL, if one exists.
-        Page page = firstPageByUrl(affectedUrl);
+        Page page = firstPageByUrl(v.affectedUrl);
         if (page != null) {
             relate(EntityType.VULNERABILITY, v.id, Relationship.AFFECTS,
                     EntityType.PAGE, page.id, "");
         }
-        saveAndGenerate(docFor(EntityType.VULNERABILITY, v.id));
+        final String affectedPageId = page != null ? page.id : null;
+        saveAndGenerate(g -> {
+            g.generateIndex();
+            g.generateDocFor(EntityType.VULNERABILITY, v.id);
+            if (affectedPageId != null) g.generatePage(affectedPageId);
+        });
         return v;
     }
 
@@ -1073,6 +1152,37 @@ public final class NotebookController {
 
     private static String baseName(Page page, String suffix) {
         return page.id + "-" + suffix;
+    }
+
+    /** True if this resource's saved source copy already has exactly this content. */
+    private boolean sameAsResourceSource(Resource res, String body) {
+        if (res.sourceFile == null || res.sourceFile.isBlank()) return false;
+        try {
+            Path f = layout.root.resolve(res.sourceFile);
+            return java.nio.file.Files.exists(f)
+                    && java.nio.file.Files.readString(f, StandardCharsets.UTF_8).equals(body);
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** File name for a saved resource body: "<id>-<leaf>", extension from the URL. */
+    private static String resourceSourceFileName(Resource res) {
+        String leaf = "resource";
+        try {
+            String path = java.net.URI.create(res.url).getPath();
+            if (path != null && !path.isEmpty() && !path.endsWith("/")) {
+                leaf = path.substring(path.lastIndexOf('/') + 1);
+            }
+        } catch (RuntimeException ignored) { /* keep default */ }
+        if (leaf.isBlank()) leaf = "resource";
+        return res.id + "-" + leaf;
+    }
+
+    /** Append a line to a notes field, keeping existing content. */
+    private static String appendLine(String existing, String line) {
+        if (existing == null || existing.isBlank()) return line;
+        return existing + "\n" + line;
     }
 
     private static String sourceFileName(Page page) {

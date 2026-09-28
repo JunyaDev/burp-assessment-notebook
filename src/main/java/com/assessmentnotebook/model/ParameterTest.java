@@ -41,6 +41,8 @@ public class ParameterTest {
     public int responseStatus;
     public int responseLength;
     public boolean reflected;
+    /** A known SQL-error fingerprint appeared in the response body. */
+    public boolean sqlErrorSignature;
 
     public String observation = "";
     public Classification classification = Classification.OBSERVED_BEHAVIOR;

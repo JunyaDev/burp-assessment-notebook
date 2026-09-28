@@ -28,19 +28,24 @@ public final class ParameterAnalysis {
                .append("; ");
         }
         if (t.reflected) obs.append("value reflected in response; ");
+        if (t.sqlErrorSignature) obs.append("SQL error signature in response; ");
 
         if (t.responseStatus >= 400 && t.responseStatus < 500) {
             obs.append("rejected with client error; ");
         }
-        if (!statusChanged && !lengthChanged && !t.reflected) {
+        if (t.responseStatus >= 500) {
+            obs.append("server error; ");
+        }
+        if (!statusChanged && !lengthChanged && !t.reflected && !t.sqlErrorSignature) {
             obs.append("no observable change from baseline; ");
         }
 
         t.observation = obs.toString().trim();
-        // Only a reflection canary that actually reflects is worth flagging as a
-        // potential issue; everything else is a neutral observation.
+        // Flag as a potential issue when a reflection canary actually reflects, or
+        // when a probe provokes a database error (strong SQLi signal). Everything
+        // else is a neutral observation the tester reviews and promotes by hand.
         boolean canary = "QUOTE_CANARY".equals(t.probeKind) || "MARKUP_CANARY".equals(t.probeKind);
-        t.classification = (t.reflected && canary)
+        t.classification = ((t.reflected && canary) || t.sqlErrorSignature)
                 ? ParameterTest.Classification.POTENTIAL_ISSUE
                 : ParameterTest.Classification.OBSERVED_BEHAVIOR;
     }

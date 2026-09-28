@@ -162,6 +162,16 @@ public final class TechnologyDetector {
         if (ng.find()) {
             add(found, Category.JS_FRAMEWORK, "Angular", ng.group(1), Confidence.HIGH,
                     "markup", "ng-version=\"" + ng.group(1) + "\"");
+        } else if (lower.contains("<app-root") || lower.contains("_ngcontent")
+                || lower.contains("_nghost")) {
+            // Angular's bootstrap shell: the <app-root> custom element (and the
+            // _nghost/_ngcontent attributes) sit in the raw HTML even though the
+            // ng-version attribute is only written into the DOM once the app boots.
+            // Detecting it here matches what browser fingerprinters see rendered.
+            String marker = lower.contains("<app-root") ? "<app-root> element"
+                    : "_nghost/_ngcontent attribute";
+            add(found, Category.JS_FRAMEWORK, "Angular", "", Confidence.MEDIUM,
+                    "markup", "Angular " + marker + " in HTML");
         }
         if (lower.contains("data-reactroot") || lower.contains("__react")
                 || lower.contains("_reactrootcontainer")) {

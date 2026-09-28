@@ -39,6 +39,7 @@ public class Project {
     public List<InterestingString> interestingStrings = new ArrayList<>();
     public List<PageVariant> variants = new ArrayList<>();
     public List<ParameterTest> parameterTests = new ArrayList<>();
+    public List<JsFinding> jsFindings = new ArrayList<>();
     public List<Relationship> relationships = new ArrayList<>();
 
     /** Per-type id counters (last used number for each type slug). */
