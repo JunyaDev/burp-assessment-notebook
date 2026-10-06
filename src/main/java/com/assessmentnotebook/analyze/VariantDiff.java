@@ -63,7 +63,11 @@ public final class VariantDiff {
         if (!eq(base.title, v.title)) {
             c.outputDifferences.add("title: " + show(base.title) + " -> " + show(v.title));
         }
-        if (!eq(base.structureSignature, v.structureSignature)) {
+        if (!base.responseFields.isEmpty() && !v.responseFields.isEmpty()) {
+            // Both are JSON: name the fields instead of saying "something moved".
+            fieldDiff(c.outputDifferences, "fields added", v.responseFields, base.responseFields);
+            fieldDiff(c.outputDifferences, "fields removed", base.responseFields, v.responseFields);
+        } else if (!eq(base.structureSignature, v.structureSignature)) {
             c.outputDifferences.add("page structure changed");
         }
         c.reflectedInputs.addAll(v.reflectedInputNames);
@@ -86,6 +90,17 @@ public final class VariantDiff {
                 out.add(kind + " " + k + ": " + show(av) + " -> " + show(bv));
             }
         }
+    }
+
+    /** Report the fields in {@code in} that are missing from {@code notIn}. */
+    private static void fieldDiff(List<String> out, String what, List<String> in,
+            List<String> notIn) {
+        List<String> only = new ArrayList<>(in);
+        only.removeAll(notIn);
+        if (only.isEmpty()) return;
+        int shown = Math.min(only.size(), 12);
+        out.add(what + ": " + String.join(", ", only.subList(0, shown))
+                + (only.size() > shown ? " (+" + (only.size() - shown) + " more)" : ""));
     }
 
     private static boolean eq(String a, String b) {

@@ -42,6 +42,13 @@ public class Project {
     public List<JsFinding> jsFindings = new ArrayList<>();
     public List<Relationship> relationships = new ArrayList<>();
 
+    /**
+     * Auto-capture rules and settings. Replaced wholesale when edited (never
+     * mutated in place) and volatile, because Burp's HTTP threads read it for
+     * every response while the UI thread saves changes.
+     */
+    public volatile CaptureConfig capture = new CaptureConfig();
+
     /** Per-type id counters (last used number for each type slug). */
     public Map<String, Integer> idCounters = new java.util.HashMap<>();
 

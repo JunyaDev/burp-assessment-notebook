@@ -127,3 +127,29 @@ auto-confirmed) and saved to the project; promote a real one to a finding.
 After **Capture Screenshot…**, choose to annotate: drag red boxes around
 elements and label them. They render as a scalable overlay in the docs and are
 report-ready.
+
+## v1.3 workflows
+
+### Auto-capture
+
+Instead of registering requests one by one, right-click a request to the target
+→ **Auto-Capture Rule from this Request…**, accept the rule, and browse. Pages,
+API endpoints and resources are registered as their responses pass through the
+Proxy; a page already in the notebook is skipped unless it answers differently
+(status, parameter names, authentication, response structure), in which case it
+is added as a page variant. Manage the rules, add *Ignore* exceptions and apply
+them to existing Proxy history from **Auto-Capture…** on the tab. Manual
+registration still works alongside it and is never duplicated by it.
+
+### JSON / single-page / Flutter applications
+
+Register a data call once, as an **API endpoint** (auto-capture does this by
+itself). The endpoint document holds its request parameters, its response
+fields, the page that calls it and its variants, so there is no reason to also
+register it as a resource or a form.
+
+### Describing parameters
+
+**Describe Parameters…** on a request (or **Parameters…** on the tab) opens a
+table of each form's parameters where you record what each one is for and any
+notes; both appear on the form and page documents.

@@ -16,6 +16,8 @@ public class Relationship {
     public static final String CONTAINS_FORM = "contains-form";
     public static final String CONTAINS_LINK = "contains-link";
     public static final String LOADS_RESOURCE = "loads-resource";
+    /** A page whose scripts call an API endpoint (from the request's Referer). */
+    public static final String CALLS = "calls";
     public static final String HAS_PARAMETER = "has-parameter";
     public static final String GENERATES_REQUEST = "generates-request";
     public static final String PRODUCES_RESPONSE = "produces-response";

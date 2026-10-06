@@ -19,6 +19,24 @@ import java.util.Map;
 public final class JsonParameters {
     private JsonParameters() {}
 
+    private static final com.google.gson.Gson PRETTY = new com.google.gson.GsonBuilder()
+            .setPrettyPrinting().disableHtmlEscaping().serializeNulls().create();
+
+    /**
+     * Re-indent a JSON document for reading. Anything that is not a JSON object
+     * or array (or is too large to be worth it) is returned untouched.
+     */
+    public static String pretty(String json) {
+        if (json == null || json.length() > 2_000_000) return json;
+        String t = json.stripLeading();
+        if (t.isEmpty() || (t.charAt(0) != '{' && t.charAt(0) != '[')) return json;
+        try {
+            return PRETTY.toJson(JsonParser.parseString(t));
+        } catch (RuntimeException notJson) {
+            return json;
+        }
+    }
+
     /** Parse JSON and return leaf parameters as path -> string value, in order. */
     public static Map<String, String> flatten(String json) {
         Map<String, String> out = new LinkedHashMap<>();

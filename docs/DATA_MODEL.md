@@ -47,6 +47,30 @@ change, so relative links between generated documents never break.
 - **`TargetInfo`** gains `server`, `frameworks`, `authentication` (filled by the
   setup wizard).
 
+### Enrichments added in v1.3
+
+- **`Page.kind`** is `PAGE` or `API` (an API endpoint: a JSON/XHR data call).
+  An endpoint is a page record, so forms, variants, evidence and notes work the
+  same; it additionally has `responseFields` (JSON field paths it returned) and
+  is the target of `calls` edges.
+- **`Page.pathTemplate`** (`/api/users/{id}`) is set when auto-capture grouped
+  several concrete URLs under one record; `Page.url` stays the first URL seen.
+- **`Page.fingerprints`** lists the capture fingerprints already documented
+  (`status|parameter names|auth|response shape`; see `CaptureFingerprint`), and
+  **`Page.baseline`** holds the first capture's request conditions until a
+  differing capture promotes it to a real `PageVariant`.
+- **`PageVariant`** gains `auto` (registered by auto-capture) and
+  `responseFields` (so two JSON variants are compared field by field).
+- **`Parameter.purpose` / `Parameter.notes`** are now editable in the UI, and
+  `observedValues` is filled from traffic (a few examples per parameter; never
+  for password/token-like names).
+- **`Project.capture`** is a `CaptureConfig`: the `enabled` switch, the ordered
+  `rules` (`CaptureRule`: host, path, methods, content type, status, scope,
+  tools, action), `collapseIds` and `maxVariantsPerPage`.
+
+Projects written by earlier versions load unchanged: missing fields take their
+defaults, and an existing page adopts its next sighting as its baseline.
+
 `Reflection` and `Relationship` are embedded/value types (no standalone document);
 everything else has an id.
 
@@ -69,6 +93,7 @@ links-to          page  -> page      (resolved hyperlink)
 contains-form     page  -> form
 contains-link     page  -> link
 loads-resource    page  -> resource
+calls             page  -> page      (a page's scripts call an API endpoint)
 has-parameter     form  -> parameter
 produces-response request -> response
 affects           vuln  -> page/form/parameter

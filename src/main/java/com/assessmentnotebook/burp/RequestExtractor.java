@@ -10,6 +10,7 @@ import com.assessmentnotebook.analyze.DiscoverySourceInference;
 import com.assessmentnotebook.analyze.DiscoveredPage;
 import com.assessmentnotebook.analyze.HtmlAnalyzer;
 import com.assessmentnotebook.analyze.JsonRequestForm;
+import com.assessmentnotebook.analyze.TrafficClassifier;
 import com.assessmentnotebook.core.PageRegistration;
 
 import java.nio.charset.StandardCharsets;
@@ -68,6 +69,12 @@ public final class RequestExtractor {
         // lets parameter probes attach to e.g. a JSON login field and render.
         DiscoveredPage.DiscoveredForm reqForm = requestParamForm(request, reg.url);
         if (reqForm != null) reg.discovered.forms.add(reqForm);
+
+        // Suggest page vs. API endpoint, so a JSON call is not filed as an HTML page.
+        if (TrafficClassifier.classify(reg.method, reg.url, reg.requestHeaders, reg.statusCode,
+                reg.contentType).kind == TrafficClassifier.Kind.API) {
+            reg.kind = com.assessmentnotebook.model.Page.Kind.API;
+        }
 
         DiscoverySourceInference.Result guess =
                 DiscoverySourceInference.infer(reg.method, reg.requestHeaders, toolName);

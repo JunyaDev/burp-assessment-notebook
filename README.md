@@ -51,6 +51,18 @@ to a project directory on your disk.
   capability, plus how the lab project was produced, is in
   [`docs/GUIDE.md`](docs/GUIDE.md).
 
+### Auto-capture, API endpoints and parameter notes
+- **Auto-capture rules**: define what to register (host, path, method, response
+  type, status, scope) and pages, API endpoints and resources are registered as
+  you browse, or from existing Proxy history. Known pages are skipped; a page
+  that answers differently is added as a **page variant** labelled with the
+  difference.
+- **API endpoints**: a JSON/XHR call is registered once, with its request
+  parameters, response fields and the page that calls it — no more registering
+  it as a page, a resource and a form to be safe.
+- **Parameter purpose and notes**: a table for recording what each form or
+  request parameter is for, with example values from traffic.
+
 Every section of the original specification maps to a feature; see
 [`docs/WORKFLOW.md`](docs/WORKFLOW.md) and [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
 
@@ -107,6 +119,9 @@ The extension declares its entry point through
 3. As you work, right-click a request → **Assessment Notebook**:
    - **Register Page…** — review the detected forms/links/resources, untick
      anything you don't want, then commit.
+   - **Auto-Capture Rule from this Request…** — register this host's pages,
+     API endpoints and resources automatically from now on.
+   - **Describe Parameters…** — note what each parameter is for.
    - **Add Observation…** — record an observation, hypothesis, TODO, confirmed
      finding, or rejected hypothesis, attached to the matching page.
    - **Create Vulnerability…** — start a finding, pre-filled with the URL.
@@ -155,6 +170,15 @@ Because it is produced by the real model and generator, it always reflects the
 extension's actual output.
 
 ---
+
+## Repairing a project
+
+`scripts/repair-project.sh <project-dir>` checks a project for inconsistencies
+(dangling references, pages that lost their forms or links, unresolved links,
+duplicated or mistyped resources, API calls filed as resources, moved evidence
+files, stale documents) and reports them. Add `--apply` to fix them, rebuild
+every document and verify every internal link; `project.json` is backed up
+first. See [`docs/GUIDE.md`](docs/GUIDE.md) §18.
 
 ## Testing
 

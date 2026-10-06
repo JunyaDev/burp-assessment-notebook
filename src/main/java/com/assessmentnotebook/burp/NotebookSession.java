@@ -17,6 +17,11 @@ public final class NotebookSession {
     private NotebookController controller;
     private Path root;
     private final List<Runnable> listeners = new CopyOnWriteArrayList<>();
+    private volatile AutoCaptureService capture;
+
+    /** The auto-capture service, once the extension has started it. */
+    public AutoCaptureService capture() { return capture; }
+    void attachCapture(AutoCaptureService service) { this.capture = service; }
 
     /** Open the project at {@code root}, creating it (with {@code name}) if absent. */
     public synchronized void openOrCreate(Path root, String name) throws IOException {

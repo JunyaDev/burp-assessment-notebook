@@ -15,6 +15,9 @@ import java.util.List;
 public class PageRegistration {
     public String url = "";
     public String method = "GET";
+    /** Page or API endpoint; suggested by the traffic classifier, editable. */
+    public com.assessmentnotebook.model.Page.Kind kind =
+            com.assessmentnotebook.model.Page.Kind.PAGE;
     public int statusCode;
     public String contentType = "";
     /** How the page was found (spec §3); inferred at extraction, editable. */

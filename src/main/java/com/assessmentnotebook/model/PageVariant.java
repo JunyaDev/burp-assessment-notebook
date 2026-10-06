@@ -43,6 +43,10 @@ public class PageVariant {
     public String sourceFile;
     public String screenshotId;
     public String timestamp;
+    /** Field paths of a JSON response body, for field-level comparison. */
+    public List<String> responseFields = new ArrayList<>();
+    /** True when auto-capture registered this variant because the page differed. */
+    public boolean auto = false;
 
     /** All request inputs merged into one map (query, body, JSON). */
     public Map<String, String> allInputs() {

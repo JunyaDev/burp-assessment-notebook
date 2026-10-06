@@ -1,3 +1,53 @@
+## Unreleased — auto-capture, API endpoints, parameter notes
+
+### New
+- **Auto-capture rules.** *Auto-Capture…* on the tab holds an ordered list of
+  rules (host, path glob or regex, methods, response type, status, in-scope,
+  Proxy/Repeater). Matching traffic is registered without a dialog as a page,
+  an API endpoint or a resource (*Auto-detect* decides), or left out with an
+  *Ignore* rule. *Auto-Capture Rule from this Request…* in the context menu
+  creates a rule for a host in two clicks, and *Apply to Proxy History…*
+  registers what was browsed before the rules existed. Capture is passive and
+  off until a rule is saved.
+- **No duplicates; differences become variants.** A page is identified by
+  method and path (query ignored; ids in the path collapsed, so
+  `/api/users/17` and `/api/users/42` are one record). A repeat sighting is
+  dropped unless its status, parameter names, authentication or response
+  structure differ, in which case it is added as a page variant labelled with
+  the difference, next to the first capture as baseline.
+- **API endpoints.** JSON/XHR calls are a kind of their own: one registration
+  documents the request parameters, the response fields, the calling page and
+  the variants. *Register API Endpoint…* in the menu; *Register Page…*
+  preselects the kind from the traffic.
+- **Parameter purpose and notes.** *Describe Parameters…* / *Parameters…* /
+  *Register Form…* open a table to record what each parameter is for, with
+  example values from traffic and optional name-based suggestions. Shown on the
+  form and page documents.
+
+- **Project check and repair.** `scripts/repair-project.sh <project-dir>`
+  reports inconsistencies and, with `--apply`, repairs them: dangling
+  references, children their page lost track of, unresolved links, redirects
+  and API callers, duplicated or mistyped resources, API calls registered as
+  both endpoint and resource, evidence paths from another machine, and stale
+  documents. It then rebuilds every document and checks every internal link.
+  Dry run by default; `project.json` is backed up before it is rewritten;
+  nothing tester-written is deleted.
+
+### Changed
+- Links now resolve to their destination page despite differences in port,
+  host case, trailing slash or fragment, and to the page that documents every
+  id at a path (`/users/42` → `/users/{id}`).
+- JSON bodies are saved re-indented and highlighted as JSON (the raw response
+  is still kept byte-for-byte); JSON variants are compared field by field.
+- The application tree shows every method registered at a path, not only the
+  last one.
+- The tab reads the project on a background thread, so it stays responsive
+  while captures are being saved.
+
+Test suite grew from 76 to 118.
+
+---
+
 ## Assessment Notebook v1.2.0
 
 New capability for driving assessments through the Burp GUI, plus a JavaScript

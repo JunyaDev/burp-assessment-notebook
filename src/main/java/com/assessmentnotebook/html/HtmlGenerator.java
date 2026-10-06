@@ -148,7 +148,11 @@ public final class HtmlGenerator {
         return isCodeResource(r) ? layout.scripts() : layout.files();
     }
 
-    private static boolean isCodeResource(Resource r) {
+    /**
+     * Whether a resource's document lives under {@code scripts/} (code and
+     * endpoints) rather than {@code files/} (everything else).
+     */
+    public static boolean isCodeResource(Resource r) {
         return r.type == Resource.Type.SCRIPT || r.type == Resource.Type.STYLESHEET
                 || r.type == Resource.Type.XHR || r.type == Resource.Type.API;
     }
@@ -170,7 +174,9 @@ public final class HtmlGenerator {
         if (t.authentication != null && !t.authentication.isBlank()) {
             row(b, "Authentication", orDash(t.authentication));
         }
-        row(b, "Pages", String.valueOf(project.pages.size()));
+        long endpoints = project.pages.stream().filter(p -> p.kind == Page.Kind.API).count();
+        row(b, "Pages", String.valueOf(project.pages.size() - endpoints));
+        if (endpoints > 0) row(b, "API endpoints", String.valueOf(endpoints));
         row(b, "Forms", String.valueOf(project.forms.size()));
         row(b, "Findings", String.valueOf(project.vulnerabilities.size()));
         b.append("</table>");
@@ -330,11 +336,21 @@ public final class HtmlGenerator {
         String label = node.label.isEmpty() ? "/" : esc(node.label);
         b.append("<li>");
         if (node.isPage()) {
-            Page p = project.findPage(node.pageId);
-            String badge = p != null && p.method != null && !p.method.equalsIgnoreCase("GET")
-                    ? " <span class=\"method\">" + esc(p.method) + "</span>" : "";
             b.append("<a href=\"").append(up).append("pages/").append(node.pageId)
-                    .append(".html\">").append(label).append("</a>").append(badge);
+                    .append(".html\">").append(label).append("</a>");
+            // One path can answer several methods; each gets its own linked badge.
+            boolean several = node.pageIds.size() > 1;
+            boolean api = false;
+            for (String pid : node.pageIds) {
+                Page p = project.findPage(pid);
+                if (p == null) continue;
+                api |= p.kind == Page.Kind.API;
+                if (several || (p.method != null && !p.method.equalsIgnoreCase("GET"))) {
+                    b.append(" <a class=\"method\" href=\"").append(up).append("pages/")
+                            .append(p.id).append(".html\">").append(esc(p.method)).append("</a>");
+                }
+            }
+            if (api) b.append(" <span class=\"tag\">API</span>");
         } else {
             b.append("<span class=\"branch\">").append(label).append("</span>");
         }
@@ -355,10 +371,15 @@ public final class HtmlGenerator {
         StringBuilder b = new StringBuilder();
         String up = "../";
 
-        b.append(panelOpen("PAGE // " + esc(p.id)));
+        boolean api = p.kind == Page.Kind.API;
+        b.append(panelOpen((api ? "API ENDPOINT // " : "PAGE // ") + esc(p.id)));
         b.append("<table class=\"kv\">");
         row(b, "URL", link(p.url));
-        row(b, "Title", orDash(p.title));
+        if (p.pathTemplate != null && !p.pathTemplate.isBlank()) {
+            row(b, "Path template", "<code>" + esc(p.pathTemplate) + "</code> <span class=\"dim\">"
+                    + "(every id at this path is documented here)</span>");
+        }
+        if (!api || !p.title.isBlank()) row(b, "Title", orDash(p.title));
         row(b, "Method", esc(p.method));
         row(b, "Status", p.statusCode == 0 ? "—" : String.valueOf(p.statusCode));
         row(b, "Content-Type", orDash(p.contentType));
@@ -384,6 +405,10 @@ public final class HtmlGenerator {
 
         // Findings that affect this page (inbound AFFECTS edges from vulnerabilities).
         appendPageFindings(b, p, up);
+
+        // Which pages call this endpoint, and which endpoints this page calls.
+        appendCalls(b, "CALLED BY", graph.incoming(EntityType.PAGE, p.id), true, up);
+        appendCalls(b, "API CALLS", graph.outgoing(EntityType.PAGE, p.id), false, up);
 
         // Screenshots as a stepped sequence.
         List<Screenshot> shots = of(screenshotsByPage, p.id).stream()
@@ -426,63 +451,39 @@ public final class HtmlGenerator {
             b.append("</tbody></table>").append(panelClose());
         }
 
-        // Forms.
-        b.append(panelOpen("FORMS"));
+        // Forms (for an endpoint: the parameters its requests carry).
+        b.append(panelOpen(api ? "REQUEST PARAMETERS" : "FORMS"));
         if (p.formIds.isEmpty()) {
-            b.append(empty("No forms documented on this page."));
+            b.append(empty(api ? "No request parameters documented."
+                    : "No forms documented on this page."));
         } else {
-            b.append("<ul class=\"plain\">");
             for (String fid : p.formIds) {
                 Form f = project.findForm(fid);
                 if (f == null) continue;
-                b.append("<li><a href=\"").append(up).append("forms/").append(f.id)
+                b.append("<p><a href=\"").append(up).append("forms/").append(f.id)
                         .append(".html\">").append(esc(f.method)).append(' ')
                         .append(orDash(shortUrl(f.action))).append("</a> ")
-                        .append("<span class=\"muted\">").append(f.parameterIds.size())
-                        .append(" params</span></li>");
+                        .append("<span class=\"muted\">").append(orDash(f.formIdentifier))
+                        .append(" · ").append(f.parameterIds.size()).append(" params</span></p>");
+                appendParameterSummary(b, f);
             }
-            b.append("</ul>");
         }
         b.append(panelClose());
 
-        // Links.
-        b.append(panelOpen("LINKS"));
-        List<Link> pageLinks = of(linksByPage, p.id);
-        if (pageLinks.isEmpty()) {
-            b.append(empty("No links documented."));
-        } else {
-            b.append("<table class=\"grid\"><thead><tr><th>Text</th><th>Destination</th>"
-                    + "<th>Type</th></tr></thead><tbody>");
-            for (Link l : pageLinks) {
-                String dest = l.destinationPageId != null
-                        ? "<a href=\"" + up + "pages/" + l.destinationPageId + ".html\">"
-                        + orDash(shortUrl(l.destinationUrl)) + "</a>"
-                        : link(l.destinationUrl);
-                b.append("<tr><td>").append(orDash(l.visibleText)).append("</td><td>")
-                        .append(dest).append("</td><td>").append(orDash(l.elementType))
-                        .append("</td></tr>");
+        // What the endpoint returns.
+        if (!p.responseFields.isEmpty()) {
+            b.append(panelOpen("RESPONSE FIELDS (" + p.responseFields.size() + ")"));
+            b.append("<p class=\"dim\">Field paths seen in JSON responses; <code>[]</code> is "
+                    + "any array item.</p><p>");
+            for (String field : p.responseFields) {
+                b.append("<code>").append(esc(field)).append("</code> ");
             }
-            b.append("</tbody></table>");
+            b.append("</p>").append(panelClose());
         }
-        b.append(panelClose());
 
-        // Resources.
-        b.append(panelOpen("RESOURCES"));
-        if (p.resourceIds.isEmpty()) {
-            b.append(empty("No resources associated."));
-        } else {
-            b.append("<ul class=\"plain\">");
-            for (String rid : p.resourceIds) {
-                Resource r = project.findResource(rid);
-                if (r == null) continue;
-                String dir = isCodeResource(r) ? "scripts/" : "files/";
-                b.append("<li><span class=\"tag\">").append(esc(r.type.label)).append("</span> ")
-                        .append("<a href=\"").append(up).append(dir).append(r.id).append(".html\">")
-                        .append(orDash(shortUrl(r.url))).append("</a></li>");
-            }
-            b.append("</ul>");
-        }
-        b.append(panelClose());
+        // An endpoint has no links or assets of its own; skip those panels when empty.
+        appendLinks(b, p, up, !api);
+        appendResources(b, p, up, !api);
 
         // Interesting data discovered in the scripts this page loads.
         List<com.assessmentnotebook.model.JsFinding> pageJs = new java.util.ArrayList<>();
@@ -504,7 +505,88 @@ public final class HtmlGenerator {
         }
 
         b.append(notesPanel(EntityType.PAGE, p.id));
-        return shell(shortUrl(p.url) + " // page", up, b.toString(), "page");
+        return shell(shortUrl(p.url) + (api ? " // endpoint" : " // page"), up, b.toString(), "page");
+    }
+
+    private void appendLinks(StringBuilder b, Page p, String up, boolean showWhenEmpty) {
+        List<Link> pageLinks = of(linksByPage, p.id);
+        if (pageLinks.isEmpty() && !showWhenEmpty) return;
+        b.append(panelOpen("LINKS"));
+        if (pageLinks.isEmpty()) {
+            b.append(empty("No links documented."));
+        } else {
+            b.append("<table class=\"grid\"><thead><tr><th>Text</th><th>Destination</th>"
+                    + "<th>Type</th></tr></thead><tbody>");
+            for (Link l : pageLinks) {
+                String dest = l.destinationPageId != null
+                        ? "<a href=\"" + up + "pages/" + l.destinationPageId + ".html\">"
+                        + orDash(shortUrl(l.destinationUrl)) + "</a>"
+                        : link(l.destinationUrl);
+                b.append("<tr><td>").append(orDash(l.visibleText)).append("</td><td>")
+                        .append(dest).append("</td><td>").append(orDash(l.elementType))
+                        .append("</td></tr>");
+            }
+            b.append("</tbody></table>");
+        }
+        b.append(panelClose());
+    }
+
+    private void appendResources(StringBuilder b, Page p, String up, boolean showWhenEmpty) {
+        if (p.resourceIds.isEmpty() && !showWhenEmpty) return;
+        b.append(panelOpen("RESOURCES"));
+        if (p.resourceIds.isEmpty()) {
+            b.append(empty("No resources associated."));
+        } else {
+            b.append("<ul class=\"plain\">");
+            for (String rid : p.resourceIds) {
+                Resource r = project.findResource(rid);
+                if (r == null) continue;
+                String dir = isCodeResource(r) ? "scripts/" : "files/";
+                b.append("<li><span class=\"tag\">").append(esc(r.type.label)).append("</span> ")
+                        .append("<a href=\"").append(up).append(dir).append(r.id).append(".html\">")
+                        .append(orDash(shortUrl(r.url))).append("</a></li>");
+            }
+            b.append("</ul>");
+        }
+        b.append(panelClose());
+    }
+
+    /** Name, type, purpose and notes of a form's parameters, as one compact table. */
+    private void appendParameterSummary(StringBuilder b, Form f) {
+        if (f.parameterIds.isEmpty()) return;
+        b.append("<table class=\"grid\"><thead><tr><th>Parameter</th><th>Type</th>"
+                + "<th>Purpose</th><th>Notes</th></tr></thead><tbody>");
+        for (String pid : f.parameterIds) {
+            Parameter param = project.findParameter(pid);
+            if (param == null) continue;
+            b.append("<tr><td><code>").append(orDash(param.name)).append("</code></td><td>")
+                    .append(orDash(param.inputType)).append("</td><td>")
+                    .append(orDash(param.purpose)).append("</td><td class=\"dim\">")
+                    .append(orDash(param.notes)).append("</td></tr>");
+        }
+        b.append("</tbody></table>");
+    }
+
+    /** Pages on the other end of this page's CALLS edges (page scripts -> API endpoint). */
+    private void appendCalls(StringBuilder b, String title, List<Relationship> edges,
+            boolean incoming, String up) {
+        List<Page> others = new ArrayList<>();
+        for (Relationship e : edges) {
+            if (!Relationship.CALLS.equals(e.kind)) continue;
+            Page other = project.findPage(incoming ? e.fromId : e.toId);
+            if (other != null && !others.contains(other)) others.add(other);
+        }
+        if (others.isEmpty()) return;
+        b.append(panelOpen(title + " (" + others.size() + ")"));
+        b.append("<ul class=\"plain\">");
+        for (Page other : others) {
+            String shown = other.pathTemplate == null || other.pathTemplate.isBlank()
+                    ? shortUrl(other.url) : other.pathTemplate;
+            b.append("<li><span class=\"method\">").append(esc(other.method)).append("</span> ")
+                    .append("<a href=\"").append(up).append("pages/").append(other.id)
+                    .append(".html\">").append(orDash(shown)).append("</a></li>");
+        }
+        b.append("</ul>").append(panelClose());
     }
 
     /**
@@ -609,7 +691,9 @@ public final class HtmlGenerator {
                 + "<th>Status</th><th>Length</th><th>Title</th><th>Reflected</th>"
                 + "</tr></thead><tbody>");
         for (com.assessmentnotebook.model.PageVariant v : vs) {
-            b.append("<tr><td>").append(orDash(v.label)).append("</td><td class=\"dim\"><code>")
+            b.append("<tr><td>").append(orDash(v.label))
+                    .append(v.auto ? " <span class=\"tag\">auto</span>" : "")
+                    .append("</td><td class=\"dim\"><code>")
                     .append(esc(conditions(v))).append("</code></td><td>")
                     .append(v.statusCode == 0 ? "—" : String.valueOf(v.statusCode)).append("</td><td>")
                     .append(v.bodyLength).append("</td><td>").append(orDash(v.title)).append("</td><td>")
@@ -736,6 +820,9 @@ public final class HtmlGenerator {
                 b.append("<table class=\"kv\">");
                 row(b, "Default", orDash(param.defaultValue));
                 row(b, "Purpose", orDash(param.purpose));
+                if (param.notes != null && !param.notes.isBlank()) {
+                    row(b, "Notes", esc(param.notes).replace("\n", "<br>"));
+                }
                 row(b, "Observed values", param.observedValues.isEmpty() ? "—"
                         : esc(String.join(", ", param.observedValues)));
                 b.append("</table>");

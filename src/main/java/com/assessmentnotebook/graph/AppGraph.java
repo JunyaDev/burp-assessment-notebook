@@ -104,17 +104,16 @@ public final class AppGraph {
         TreeNode root = new TreeNode(rootLabel, "/");
 
         for (Page page : project.pages) {
-            List<String> segments = pathSegments(page.url);
+            // A templated path (/api/users/{id}) places the record where the
+            // tester thinks of it, not under the one id it was first seen with.
+            List<String> segments = page.pathTemplate == null || page.pathTemplate.isBlank()
+                    ? pathSegments(page.url) : splitPath(page.pathTemplate);
             TreeNode node = root;
             for (String seg : segments) {
                 node = node.child(seg);
             }
             // A page whose path is "/" attaches at the root itself.
-            if (segments.isEmpty()) {
-                if (root.pageId == null) root.pageId = page.id;
-            } else {
-                node.pageId = page.id;
-            }
+            node.addPage(page.id);
         }
         return root;
     }
@@ -123,8 +122,11 @@ public final class AppGraph {
 
     /** Split a URL's path into non-empty segments; query and fragment ignored. */
     static List<String> pathSegments(String url) {
+        return splitPath(pathOf(url));
+    }
+
+    private static List<String> splitPath(String path) {
         List<String> out = new ArrayList<>();
-        String path = pathOf(url);
         for (String seg : path.split("/")) {
             if (!seg.isEmpty()) out.add(seg);
         }

@@ -1,7 +1,10 @@
 package com.assessmentnotebook.core;
 
 import com.assessmentnotebook.analyze.DiscoveredPage;
+import com.assessmentnotebook.analyze.JsonParameters;
 import com.assessmentnotebook.analyze.ReflectionDetector;
+import com.assessmentnotebook.analyze.ResponseShape;
+import com.assessmentnotebook.analyze.UrlTemplates;
 import com.assessmentnotebook.graph.AppGraph;
 import com.assessmentnotebook.html.HtmlGenerator;
 import com.assessmentnotebook.model.*;
@@ -35,6 +38,20 @@ public final class NotebookController {
     /** Set view of {@code project.relationships} so de-duplication is O(1). */
     private final java.util.Set<Relationship> relationshipIndex = new java.util.HashSet<>();
 
+    // Auto-capture state. Captures mutate the model without saving; the documents
+    // they touched are remembered here until flushCapture() writes them once.
+    private boolean captureDirty;
+    private final java.util.Set<String> touchedPages = new java.util.LinkedHashSet<>();
+    private final java.util.Set<String> touchedForms = new java.util.LinkedHashSet<>();
+    private final java.util.Set<String> touchedResources = new java.util.LinkedHashSet<>();
+    /** Pages by "METHOD templateKey" and by templateKey alone; see ensureCaptureIndex(). */
+    private java.util.Map<String, Page> captureIndex;
+    private java.util.Map<String, Page> captureIndexAnyMethod;
+    private int captureIndexedPages = -1;
+    private boolean captureIndexCollapse;
+    private java.util.Map<String, Resource> captureResources;
+    private int captureResourcesFor = -1;
+
     public NotebookController(Path root) {
         this.store = new ProjectStore(root);
         this.layout = store.layout();
@@ -50,6 +67,9 @@ public final class NotebookController {
 
     public Project open() throws IOException {
         project = store.load();
+        // Projects written before auto-capture existed (or hand-edited) lack these.
+        if (project.capture == null) project.capture = new CaptureConfig();
+        if (project.capture.rules == null) project.capture.rules = new ArrayList<>();
         return project;
     }
 
@@ -60,9 +80,18 @@ public final class NotebookController {
 
     /** Persist the model and rebuild all documentation from it. */
     public synchronized void saveAndGenerate() throws IOException {
-        resolveLinkDestinations();
+        resolveLinkDestinations(null);
         store.save(project);
         new HtmlGenerator(project, layout).generateAll();
+        // Everything is on disk and rebuilt, including whatever auto-capture had pending.
+        clearCapturePending();
+    }
+
+    private void clearCapturePending() {
+        captureDirty = false;
+        touchedPages.clear();
+        touchedForms.clear();
+        touchedResources.clear();
     }
 
     /**
@@ -99,7 +128,18 @@ public final class NotebookController {
 
     /** Register or update a page from a tester-confirmed proposal. */
     public synchronized Page registerPage(PageRegistration reg) throws IOException {
-        String now = Timestamps.now();
+        Page page = registerPageInternal(reg, Timestamps.now(), false);
+        saveAndGenerate();
+        return page;
+    }
+
+    /**
+     * Apply a registration to the model without saving. {@code templated} is
+     * set by auto-capture, which groups concrete URLs under one record and so
+     * wants the page to remember its path template.
+     */
+    private Page registerPageInternal(PageRegistration reg, String now, boolean templated)
+            throws IOException {
         Page page = project.findPageByRequest(reg.url, reg.method);
         boolean isNew = page == null;
         if (isNew) {
@@ -108,8 +148,10 @@ public final class NotebookController {
             page.url = reg.url;
             page.method = reg.method;
             page.firstSeen = now;
+            if (templated) page.pathTemplate = UrlTemplates.templatePath(reg.url);
             project.pages.add(page);
         }
+        page.kind = reg.kind == null ? Page.Kind.PAGE : reg.kind;
         page.lastSeen = now;
         if (reg.statusCode != 0) page.statusCode = reg.statusCode;
         if (!reg.contentType.isBlank()) page.contentType = reg.contentType;
@@ -143,10 +185,13 @@ public final class NotebookController {
                         EntityType.RESPONSE, resp.id, "");
             }
         }
-        if (reg.pageSource != null && !reg.pageSource.isBlank()
-                && !sameAsLastSource(page, reg.pageSource)) {
-            String srcFile = store.saveSource(reg.pageSource, sourceFileName(page));
-            if (!page.sourceFiles.contains(srcFile)) page.sourceFiles.add(srcFile);
+        if (reg.pageSource != null && !reg.pageSource.isBlank()) {
+            // JSON is re-indented for reading; the untouched bytes are in the raw response.
+            String source = JsonParameters.pretty(reg.pageSource);
+            if (!sameAsLastSource(page, source)) {
+                String srcFile = store.saveSource(source, sourceFileName(page, reg.pageSource));
+                if (!page.sourceFiles.contains(srcFile)) page.sourceFiles.add(srcFile);
+            }
         }
 
         // Re-registration updates what is already there rather than adding a
@@ -178,7 +223,27 @@ public final class NotebookController {
                     reg.pageSource, reg.contentType), now);
         }
 
-        saveAndGenerate();
+        // What the endpoint returns, and which page's scripts call it.
+        mergeResponseFields(page, ResponseShape.jsonFields(reg.pageSource));
+        if (page.kind == Page.Kind.API) {
+            Page caller = pageForReferer(reg.requestHeaders);
+            if (caller != null && caller != page && caller.kind == Page.Kind.PAGE) {
+                relate(EntityType.PAGE, caller.id, Relationship.CALLS,
+                        EntityType.PAGE, page.id, "");
+                touchedPages.add(caller.id);
+            }
+        }
+
+        // Remember what this capture looked like, so auto-capture can tell a
+        // repeat sighting from a page that now answers differently.
+        String fingerprint = CaptureFingerprint.of(reg).key();
+        if (page.fingerprints.isEmpty()) {
+            page.fingerprints.add(fingerprint);
+            if (page.variantIds.isEmpty()) page.baseline = baselineFrom(reg, page, now);
+        } else if (!page.fingerprints.contains(fingerprint)) {
+            page.fingerprints.add(fingerprint);
+        }
+        noteObservedValues(page, RequestParams.of(reg));
         return page;
     }
 
@@ -240,9 +305,13 @@ public final class NotebookController {
     }
 
     private Form findFormOnPage(Page page, DiscoveredPage.DiscoveredForm df) {
+        // The synthesized request-parameter form uses the request URL as its
+        // action, which varies with the query string; a page has one such form
+        // per kind, so it is matched on identifier and method alone.
+        boolean requestForm = nz(df.identifier).startsWith(REQUEST_FORM);
         for (String fid : page.formIds) {
             Form f = project.findForm(fid);
-            if (f != null && nz(f.action).equals(nz(df.action))
+            if (f != null && (requestForm || nz(f.action).equals(nz(df.action)))
                     && nz(f.method).equalsIgnoreCase(nz(df.method))
                     && nz(f.formIdentifier).equals(nz(df.identifier))) {
                 return f;
@@ -306,6 +375,9 @@ public final class NotebookController {
             return false;
         }
     }
+
+    /** Identifier prefix of the form synthesized from a request's own parameters. */
+    private static final String REQUEST_FORM = "request parameters";
 
     private static String nz(String s) { return s == null ? "" : s; }
 
@@ -764,23 +836,7 @@ public final class NotebookController {
             project.pages.add(page);
         }
         page.lastSeen = now;
-
-        v.id = project.nextId(EntityType.PAGE_VARIANT);
-        v.pageId = page.id;
-        v.timestamp = now;
-        if (responseBody != null) {
-            v.bodyLength = responseBody.length();
-            v.title = com.assessmentnotebook.analyze.ResponseShape.title(responseBody);
-            v.structureSignature =
-                    com.assessmentnotebook.analyze.ResponseShape.structureSignature(responseBody);
-            v.reflectedInputNames = reflectedInputs(v.allInputs(), responseBody);
-            String file = store.saveSource(responseBody, page.id + "-" + v.id + ".html");
-            v.sourceFile = file;
-        }
-        project.variants.add(v);
-        if (!page.variantIds.contains(v.id)) page.variantIds.add(v.id);
-        relate(EntityType.PAGE, page.id, Relationship.RELATES_TO,
-                EntityType.PAGE_VARIANT, v.id, "variant");
+        addVariant(page, v, responseBody, now);
         if (newPage) {
             saveAndGenerate();
         } else {
@@ -788,6 +844,79 @@ public final class NotebookController {
             saveAndGenerate(g -> g.generatePage(pid));
         }
         return v;
+    }
+
+    /** Attach a variant to a page (ids, derived descriptors, saved body) without saving. */
+    private void addVariant(Page page, PageVariant v, String responseBody, String now)
+            throws IOException {
+        v.id = project.nextId(EntityType.PAGE_VARIANT);
+        v.pageId = page.id;
+        v.timestamp = now;
+        if (responseBody != null) {
+            describeResponse(v, responseBody);
+            v.sourceFile = store.saveSource(JsonParameters.pretty(responseBody),
+                    page.id + "-" + v.id + bodyExtension(v.contentType, responseBody));
+        }
+        project.variants.add(v);
+        if (!page.variantIds.contains(v.id)) page.variantIds.add(v.id);
+        relate(EntityType.PAGE, page.id, Relationship.RELATES_TO,
+                EntityType.PAGE_VARIANT, v.id, "variant");
+    }
+
+    /** Compute the descriptors variants are compared on (spec §13). */
+    private static void describeResponse(PageVariant v, String body) {
+        v.bodyLength = body.length();
+        v.responseFields = ResponseShape.jsonFields(body);
+        // jsoup would wrap a JSON body in an empty document; it has no title or tags.
+        boolean json = !v.responseFields.isEmpty();
+        v.title = json ? "" : ResponseShape.title(body);
+        v.structureSignature = ResponseShape.structureSignature(body);
+        v.reflectedInputNames = reflectedInputs(v.allInputs(), body);
+    }
+
+    /** The request conditions of a registration, as a (not yet attached) variant. */
+    private static PageVariant variantFrom(PageRegistration reg, String label) {
+        RequestParams rp = RequestParams.of(reg);
+        PageVariant v = new PageVariant();
+        v.url = reg.url;
+        v.method = reg.method;
+        v.label = label;
+        v.queryParams.putAll(rp.query);
+        v.bodyParams.putAll(rp.body);
+        v.jsonParams.putAll(rp.json);
+        v.cookies.putAll(rp.cookies);
+        v.authContext = rp.authorized ? "Authorization header present" : "anonymous";
+        if (!rp.contentType.isEmpty()) v.relevantHeaders.add("Content-Type: " + rp.contentType);
+        if (rp.authorized) v.relevantHeaders.add("Authorization: present");
+        v.statusCode = reg.statusCode;
+        v.contentType = nz(reg.contentType);
+        return v;
+    }
+
+    /** A page's first capture, kept on the page until there is something to compare it to. */
+    private static PageVariant baselineFrom(PageRegistration reg, Page page, String now) {
+        PageVariant b = variantFrom(reg, "baseline (first capture)");
+        b.timestamp = now;
+        if (reg.pageSource != null && !reg.pageSource.isBlank()) {
+            describeResponse(b, reg.pageSource);
+            if (!page.sourceFiles.isEmpty()) {
+                b.sourceFile = page.sourceFiles.get(page.sourceFiles.size() - 1);
+            }
+        }
+        return b;
+    }
+
+    /** Turn the page's held first capture into a real variant, if it still has one. */
+    private void promoteBaseline(Page page) {
+        PageVariant b = page.baseline;
+        if (b == null) return;
+        page.baseline = null;
+        b.id = project.nextId(EntityType.PAGE_VARIANT);
+        b.pageId = page.id;
+        project.variants.add(b);
+        page.variantIds.add(b.id);
+        relate(EntityType.PAGE, page.id, Relationship.RELATES_TO,
+                EntityType.PAGE_VARIANT, b.id, "variant");
     }
 
     /** Compare every variant of a page against the first (baseline). */
@@ -1053,18 +1182,329 @@ public final class NotebookController {
         saveAndGenerate();
     }
 
+    // ---- auto-capture (rules) --------------------------------------------
+
+    /** A private copy of the auto-capture settings, for editing. */
+    public synchronized CaptureConfig captureConfig() {
+        return project.capture.copy();
+    }
+
+    /** Replace the auto-capture settings and persist them. */
+    public synchronized void applyCaptureConfig(CaptureConfig config) throws IOException {
+        project.capture = config.copy();
+        store.save(project);
+    }
+
+    /**
+     * Register an observed page or API endpoint on behalf of an auto-capture
+     * rule, <b>without saving</b>; call {@link #flushCapture()} after a batch.
+     *
+     * <p>A page is identified by method and path (query ignored, id-like
+     * segments collapsed when the project says so). The first sighting
+     * registers it in full. A later sighting is compared by
+     * {@link CaptureFingerprint}: if it matches something already documented it
+     * is dropped; if it differs it becomes a page variant, and whatever new
+     * forms, links, resources or response fields it shows are merged in.
+     */
+    public synchronized CaptureResult capture(PageRegistration reg) throws IOException {
+        String now = Timestamps.now();
+        boolean api = reg.kind == Page.Kind.API;
+        Page page = pageByTemplate(reg.method, reg.url);
+        if (page == null) {
+            if (!api && reg.parentPageId == null) {
+                Page referrer = pageForReferer(reg.requestHeaders);
+                if (referrer != null) reg.parentPageId = referrer.id;
+            }
+            page = registerPageInternal(reg, now, project.capture.collapseIds);
+            touch(page);
+            return new CaptureResult(api ? CaptureResult.Outcome.NEW_ENDPOINT
+                    : CaptureResult.Outcome.NEW_PAGE, page.id, reg.method + " " + reg.url);
+        }
+
+        CaptureFingerprint fp = CaptureFingerprint.of(reg);
+        String key = fp.key();
+        RequestParams params = RequestParams.of(reg);
+        if (page.fingerprints.isEmpty()) {
+            // Registered before fingerprints existed: take this sighting as the
+            // baseline rather than guessing whether it differs from the original.
+            page.fingerprints.add(key);
+            if (page.variantIds.isEmpty()) page.baseline = baselineFrom(reg, page, now);
+            noteObservedValues(page, params);
+            captureDirty = true;
+            return new CaptureResult(CaptureResult.Outcome.DUPLICATE, page.id, "adopted as baseline");
+        }
+        if (page.fingerprints.contains(key)) {
+            if (noteObservedValues(page, params)) captureDirty = true;
+            return new CaptureResult(CaptureResult.Outcome.DUPLICATE, page.id, "");
+        }
+        if (page.variantIds.size() >= Math.max(1, project.capture.maxVariantsPerPage)) {
+            return new CaptureResult(CaptureResult.Outcome.CAPPED, page.id,
+                    "variant limit reached for " + page.url);
+        }
+
+        promoteBaseline(page);
+        PageVariant v = variantFrom(reg, CaptureFingerprint.label(page.fingerprints.get(0), key));
+        v.auto = true;
+        addVariant(page, v, reg.pageSource == null ? "" : reg.pageSource, now);
+        page.fingerprints.add(key);
+        page.lastSeen = now;
+
+        // A variant often reveals more of the page: merge it, never duplicate.
+        DiscoveredPage d = reg.discovered != null ? reg.discovered : new DiscoveredPage();
+        for (DiscoveredPage.DiscoveredForm df : d.forms) registerForm(page, df, now);
+        for (DiscoveredPage.DiscoveredLink dl : d.links) registerLink(page, dl, now);
+        java.util.Map<String, Resource> index = resourceIndex();
+        for (DiscoveredPage.DiscoveredResource dr : d.resources) {
+            registerResource(page, dr, now, index);
+        }
+        mergeResponseFields(page, v.responseFields);
+        noteObservedValues(page, params);
+        touch(page);
+        return new CaptureResult(CaptureResult.Outcome.VARIANT, v.id, v.label);
+    }
+
+    /**
+     * Register an observed static resource on behalf of an auto-capture rule,
+     * without saving. A resource already in the notebook is left alone unless
+     * this sighting adds something: a more specific type, or another page
+     * (taken from the Referer) that loads it.
+     */
+    public synchronized CaptureResult captureResource(String url, Resource.Type type,
+            List<String> requestHeaders) {
+        String now = Timestamps.now();
+        java.util.Map<String, Resource> index = captureResourceIndex();
+        Resource existing = index.get(com.assessmentnotebook.analyze.ResourceUrls.canonical(url));
+        Page loader = pageForReferer(requestHeaders);
+        boolean isNew = existing == null;
+        boolean changed = isNew;
+        if (!isNew && Resource.specificity(type) > Resource.specificity(existing.type)) changed = true;
+        if (!isNew && loader != null && !existing.pageIds.contains(loader.id)) changed = true;
+        if (!changed) return new CaptureResult(CaptureResult.Outcome.DUPLICATE, existing.id, "");
+
+        Resource res = resolveResource(url, type, now, index);
+        captureResourcesFor = project.resources.size();
+        if (loader != null && !res.pageIds.contains(loader.id)) {
+            res.pageIds.add(loader.id);
+            if (!loader.resourceIds.contains(res.id)) loader.resourceIds.add(res.id);
+            relate(EntityType.PAGE, loader.id, Relationship.LOADS_RESOURCE,
+                    EntityType.RESOURCE, res.id, "");
+            touchedPages.add(loader.id);
+        }
+        touchedResources.add(res.id);
+        captureDirty = true;
+        return new CaptureResult(isNew ? CaptureResult.Outcome.NEW_RESOURCE
+                : CaptureResult.Outcome.UPDATED, res.id, res.url);
+    }
+
+    /**
+     * Persist what {@link #capture} and {@link #captureResource} changed since
+     * the last flush and regenerate only the documents involved. Returns false
+     * when there was nothing to write.
+     */
+    public synchronized boolean flushCapture() throws IOException {
+        if (!captureDirty) return false;
+        resolveLinkDestinations(touchedPages);
+        store.save(project);
+        HtmlGenerator g = new HtmlGenerator(project, layout);
+        g.generateIndex();
+        for (String id : touchedPages) g.generatePage(id);
+        for (String id : touchedForms) g.generateForm(id);
+        for (String id : touchedResources) g.generateResource(id);
+        if (!touchedPages.isEmpty()) g.generateLinksIndex();
+        clearCapturePending();
+        return true;
+    }
+
+    /** Mark a page and everything rendered from it for the next flush. */
+    private void touch(Page page) {
+        captureDirty = true;
+        touchedPages.add(page.id);
+        touchedForms.addAll(page.formIds);
+        touchedResources.addAll(page.resourceIds);
+    }
+
+    /**
+     * The page a request belongs to, for actions that start from a request the
+     * tester selected: an exact URL match first, then the record auto-capture
+     * would file it under (so {@code /api/users/42} finds {@code /api/users/{id}}).
+     */
+    public synchronized Page findPageFor(String url, String method) {
+        Page exact = project.findPageByRequest(url, method);
+        if (exact != null) return exact;
+        Page templated = pageByTemplate(method, url);
+        if (templated != null) return templated;
+        for (Page p : project.pages) {
+            if (p.url.equals(url)) return p;
+        }
+        ensureCaptureIndex();
+        return captureIndexAnyMethod.get(UrlTemplates.key(url, captureIndexCollapse));
+    }
+
+    /** Compute something from the model while no capture or edit is mutating it. */
+    public synchronized <T> T read(java.util.function.Function<Project, T> view) {
+        return view.apply(project);
+    }
+
+    private Page pageByTemplate(String method, String url) {
+        ensureCaptureIndex();
+        return captureIndex.get(nz(method).toUpperCase() + " "
+                + UrlTemplates.key(url, captureIndexCollapse));
+    }
+
+    /** The registered page a Referer header points at, or null. */
+    private Page pageForReferer(List<String> requestHeaders) {
+        String referer = RequestParams.header(requestHeaders, "referer");
+        if (referer.isEmpty()) return null;
+        Page get = pageByTemplate("GET", referer);
+        if (get != null) return get;
+        return captureIndexAnyMethod.get(UrlTemplates.key(referer, captureIndexCollapse));
+    }
+
+    /** (Re)build the page lookup when pages were added or the grouping rule changed. */
+    private void ensureCaptureIndex() {
+        boolean collapse = project.capture.collapseIds;
+        if (captureIndex != null && captureIndexedPages == project.pages.size()
+                && captureIndexCollapse == collapse) {
+            return;
+        }
+        captureIndex = new java.util.HashMap<>();
+        captureIndexAnyMethod = new java.util.HashMap<>();
+        for (Page p : project.pages) {
+            String key = UrlTemplates.key(p.url, collapse);
+            captureIndex.putIfAbsent(nz(p.method).toUpperCase() + " " + key, p);
+            captureIndexAnyMethod.putIfAbsent(key, p);
+        }
+        captureIndexedPages = project.pages.size();
+        captureIndexCollapse = collapse;
+    }
+
+    /** {@link #resourceIndex()}, kept between captures while no resource is added elsewhere. */
+    private java.util.Map<String, Resource> captureResourceIndex() {
+        if (captureResources == null || captureResourcesFor != project.resources.size()) {
+            captureResources = resourceIndex();
+            captureResourcesFor = project.resources.size();
+        }
+        return captureResources;
+    }
+
+    private static final int MAX_RESPONSE_FIELDS = 300;
+    private static final int MAX_OBSERVED_VALUES = 8;
+    /** Parameters whose values are credentials, never copied into observed values. */
+    private static final java.util.regex.Pattern SENSITIVE_NAME = java.util.regex.Pattern.compile(
+            "(?i)pass(word|wd)?|pwd|secret|token|api[_-]?key|otp|(^|_)pin$|cvv|card|ssn|authorization");
+
+    private void mergeResponseFields(Page page, List<String> fields) {
+        for (String f : fields) {
+            if (page.responseFields.size() >= MAX_RESPONSE_FIELDS) return;
+            if (!page.responseFields.contains(f)) page.responseFields.add(f);
+        }
+    }
+
+    /**
+     * Record the values this request sent for the page's request parameters (a
+     * few distinct examples each), so the form document shows what a parameter
+     * actually carries. Returns true if anything was added.
+     */
+    private boolean noteObservedValues(Page page, RequestParams params) {
+        java.util.Map<String, String> sent = params.all();
+        if (sent.isEmpty()) return false;
+        boolean added = false;
+        for (String fid : page.formIds) {
+            Form f = project.findForm(fid);
+            if (f == null || !nz(f.formIdentifier).startsWith(REQUEST_FORM)) continue;
+            for (String pid : f.parameterIds) {
+                Parameter p = project.findParameter(pid);
+                if (p == null) continue;
+                String value = sent.get(p.name);
+                if (value == null || value.isEmpty() || value.length() > 120
+                        || SENSITIVE_NAME.matcher(nz(p.name)).find()
+                        || p.observedValues.size() >= MAX_OBSERVED_VALUES
+                        || p.observedValues.contains(value)) {
+                    continue;
+                }
+                p.observedValues.add(value);
+                touchedForms.add(f.id);
+                added = true;
+            }
+        }
+        return added;
+    }
+
+    // ---- parameter annotation --------------------------------------------
+
+    /** A tester's description of one parameter; a null field is left as it is. */
+    public static final class ParameterEdit {
+        public final String parameterId;
+        public final String purpose;
+        public final String notes;
+
+        public ParameterEdit(String parameterId, String purpose, String notes) {
+            this.parameterId = parameterId;
+            this.purpose = purpose;
+            this.notes = notes;
+        }
+    }
+
+    /**
+     * Save the tester's purpose and notes for parameters, and notes for forms
+     * (form id -> text), then redraw the forms and pages that show them.
+     * Returns how many parameters and forms actually changed.
+     */
+    public synchronized int annotateParameters(List<ParameterEdit> edits,
+            java.util.Map<String, String> formNotes) throws IOException {
+        String now = Timestamps.now();
+        java.util.Set<String> forms = new java.util.LinkedHashSet<>();
+        int changed = 0;
+        for (ParameterEdit e : edits == null ? List.<ParameterEdit>of() : edits) {
+            Parameter p = project.findParameter(e.parameterId);
+            if (p == null) continue;
+            boolean diff = false;
+            if (e.purpose != null && !e.purpose.equals(p.purpose)) { p.purpose = e.purpose; diff = true; }
+            if (e.notes != null && !e.notes.equals(p.notes)) { p.notes = e.notes; diff = true; }
+            if (!diff) continue;
+            p.updatedAt = now;
+            changed++;
+            for (Form f : formsContaining(p.id)) forms.add(f.id);
+        }
+        if (formNotes != null) {
+            for (var e : formNotes.entrySet()) {
+                Form f = project.findForm(e.getKey());
+                if (f == null || e.getValue() == null || e.getValue().equals(f.notes)) continue;
+                f.notes = e.getValue();
+                f.updatedAt = now;
+                changed++;
+                forms.add(f.id);
+            }
+        }
+        if (changed == 0) return 0;
+        java.util.Set<String> pages = new java.util.LinkedHashSet<>();
+        for (String fid : forms) {
+            Form f = project.findForm(fid);
+            if (f != null && f.pageId != null) pages.add(f.pageId);
+        }
+        saveAndGenerate(g -> {
+            for (String id : forms) g.generateForm(id);
+            for (String id : pages) g.generatePage(id);
+        });
+        return changed;
+    }
+
     // ---- helpers ---------------------------------------------------------
 
-    /** Fill in destinationPageId + links-to edges for links whose target is a page. */
-    private void resolveLinkDestinations() {
-        java.util.Map<String, Page> byUrl = new java.util.HashMap<>();
-        for (Page p : project.pages) byUrl.putIfAbsent(p.url, p);
+    /**
+     * Fill in destinationPageId + links-to edges for links whose target is a
+     * page. Source pages whose links were resolved are added to
+     * {@code affectedPages} (when given) so a partial regeneration can redraw them.
+     */
+    private void resolveLinkDestinations(java.util.Set<String> affectedPages) {
+        PageLookup pages = new PageLookup(project);
         for (Link l : project.links) {
             if (l.destinationPageId != null) continue;
-            Page p = byUrl.get(l.destinationUrl);
+            Page p = pages.find(l.destinationUrl);
             if (p == null) continue;
             l.destinationPageId = p.id;
             if (l.sourcePageId != null) {
+                if (affectedPages != null) affectedPages.add(l.sourcePageId);
                 relate(EntityType.PAGE, l.sourcePageId, Relationship.LINKS_TO,
                         EntityType.PAGE, p.id, "");
             }
@@ -1185,7 +1625,7 @@ public final class NotebookController {
         return existing + "\n" + line;
     }
 
-    private static String sourceFileName(Page page) {
+    private static String sourceFileName(Page page, String body) {
         String leaf = "index";
         try {
             String path = java.net.URI.create(page.url).getPath();
@@ -1194,8 +1634,19 @@ public final class NotebookController {
             }
         } catch (RuntimeException ignored) { /* keep default */ }
         if (leaf.isBlank()) leaf = "index";
-        if (!leaf.contains(".")) leaf = leaf + ".html";
+        if (!leaf.contains(".")) leaf = leaf + bodyExtension(page.contentType, body);
         return page.id + "-" + leaf;
+    }
+
+    /** File extension for a saved body, so it is highlighted as what it is. */
+    private static String bodyExtension(String contentType, String body) {
+        String ct = nz(contentType).toLowerCase();
+        String start = body == null ? "" : body.stripLeading();
+        if (ct.contains("html")) return ".html";
+        if (ct.contains("json") || start.startsWith("{") || start.startsWith("[")) return ".json";
+        if (ct.contains("xml")) return ".xml";
+        if (ct.contains("text/plain")) return ".txt";
+        return ".html";
     }
 
     /** Bytes of a UTF-8 string, for callers assembling raw evidence. */

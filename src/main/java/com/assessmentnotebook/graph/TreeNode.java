@@ -16,6 +16,11 @@ public class TreeNode {
     public final String fullPath;
     /** Id of the page at this path, if one is registered. */
     public String pageId;
+    /**
+     * Every page registered at this path, in registration order: one path often
+     * answers several methods (GET and POST of the same endpoint).
+     */
+    public final List<String> pageIds = new ArrayList<>();
     /** Children keyed by segment, kept sorted for stable output. */
     public final TreeMap<String, TreeNode> children = new TreeMap<>();
 
@@ -34,4 +39,10 @@ public class TreeNode {
     }
 
     public boolean isPage() { return pageId != null; }
+
+    /** Attach a page at this node; the first one attached stays the primary. */
+    public void addPage(String id) {
+        if (pageId == null) pageId = id;
+        if (!pageIds.contains(id)) pageIds.add(id);
+    }
 }

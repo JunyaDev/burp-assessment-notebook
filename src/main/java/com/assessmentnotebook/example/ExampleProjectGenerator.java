@@ -184,6 +184,7 @@ public final class ExampleProjectGenerator {
         reg.statusCode = status;
         boolean json = body.startsWith("{");
         reg.contentType = json ? "application/json" : "text/html";
+        if (json) reg.kind = Page.Kind.API;
         reg.discoverySource = discovery;
         reg.discoverySourceKind = kindFor(discovery);
         reg.parentPageId = parentId;

@@ -9,7 +9,6 @@ import com.assessmentnotebook.burp.ui.RegisterPageDialog;
 import com.assessmentnotebook.burp.ui.JsScanDialog;
 import com.assessmentnotebook.burp.ui.RegisterResourceDialog;
 import com.assessmentnotebook.burp.ui.ScreenshotAnnotator;
-import com.assessmentnotebook.core.NotebookController;
 import com.assessmentnotebook.core.PageRegistration;
 import com.assessmentnotebook.model.*;
 
@@ -49,10 +48,14 @@ public final class ContextMenuProvider implements ContextMenuItemsProvider {
         // itself (Proxy tab). Montoya exposes no global extension hotkey, so this
         // in-menu letter is the only keyboard path that works and is collision-free.
         menu.setMnemonic('A');
-        menu.add(action("Register Page…", 'P', () -> registerPage(rr), rr != null));
+        menu.add(action("Register Page…", 'P', () -> registerPage(rr, null, false), rr != null));
+        menu.add(action("Register API Endpoint…", 'I',
+                () -> registerPage(rr, Page.Kind.API, false), rr != null));
         menu.add(action("Register Resource…", 'R', () -> registerResource(rr), rr != null));
         menu.add(action("Register Form…", 'F', () -> registerForm(rr), rr != null));
         menu.add(action("Register as Page Variant…", 'B', () -> registerVariant(rr), rr != null));
+        menu.add(action("Describe Parameters (purpose / notes)…", 'O',
+                () -> describeParameters(rr), true));
         menu.add(action("Add Note / Observation…", 'N', () -> addObservation(rr), true));
         menu.add(action("Mark Interesting String…", 'M',
                 () -> markInterestingString(rr, selectedText), true));
@@ -64,6 +67,8 @@ public final class ContextMenuProvider implements ContextMenuItemsProvider {
         menu.add(action("Create Vulnerability…", 'V', () -> createVulnerability(rr), true));
         menu.add(action("Capture Screenshot…", 'S', () -> captureScreenshot(rr), true));
         menu.addSeparator();
+        menu.add(action("Auto-Capture Rule from this Request…", 'U',
+                () -> ruleFromRequest(rr), rr != null));
         menu.add(action("Export Wordlists", 'W', this::exportWordlists, true));
         menu.add(action("Open Project Documentation", 'D', this::openDocs, true));
 
@@ -123,16 +128,23 @@ public final class ContextMenuProvider implements ContextMenuItemsProvider {
 
     // ---- actions ---------------------------------------------------------
 
-    private void registerPage(HttpRequestResponse rr) {
+    /**
+     * @param kind          force page or API endpoint, or null to keep what the
+     *                      traffic classifier suggested
+     * @param annotateAfter open the parameter table once the page is registered
+     */
+    private void registerPage(HttpRequestResponse rr, Page.Kind kind, boolean annotateAfter) {
         if (!requireProject() || rr == null) return;
         // Parsing a large response with jsoup is not instant; keep it off the EDT.
         new SwingWorker<PageRegistration, Void>() {
             @Override protected PageRegistration doInBackground() {
-                return extractor.toRegistration(rr);
+                PageRegistration reg = extractor.toRegistration(rr);
+                if (kind != null) reg.kind = kind;
+                return reg;
             }
             @Override protected void done() {
                 try {
-                    new RegisterPageDialog(api, session, get()).setVisible(true);
+                    new RegisterPageDialog(api, session, get(), annotateAfter).setVisible(true);
                 } catch (Exception ex) {
                     api.logging().logToError("Could not analyze the selected message", ex);
                     BurpUi.error(api, "Could not analyze the selected message: " + ex.getMessage());
@@ -153,10 +165,50 @@ public final class ContextMenuProvider implements ContextMenuItemsProvider {
 
     /**
      * Forms are captured as part of their page; this routes to the page review
-     * dialog, whose FORMS checklist is the form-confirmation UI (spec §2).
+     * dialog, whose FORMS checklist is the form-confirmation UI (spec §2), and
+     * then opens the parameter table so each field can be described.
      */
     private void registerForm(HttpRequestResponse rr) {
-        registerPage(rr);
+        registerPage(rr, null, true);
+    }
+
+    /** Open the purpose/notes table for the selected request's forms (or all forms). */
+    private void describeParameters(HttpRequestResponse rr) {
+        if (!requireProject()) return;
+        Page page = rr != null ? matchPage(rr) : null;
+        List<String> formIds = page == null ? List.of()
+                : session.controller().read(p -> new ArrayList<>(page.formIds));
+        com.assessmentnotebook.burp.ui.ParameterNotesDialog dialog =
+                new com.assessmentnotebook.burp.ui.ParameterNotesDialog(api, session, formIds);
+        if (!dialog.hasForms()) {
+            dialog.dispose();
+            BurpUi.info(api, "No forms or request parameters are registered yet.\n"
+                    + "Register the page or API endpoint first.");
+            return;
+        }
+        dialog.setVisible(true);
+    }
+
+    /** Create an auto-capture rule for the selected request's host and switch capture on. */
+    private void ruleFromRequest(HttpRequestResponse rr) {
+        if (!requireProject() || rr == null) return;
+        CaptureRule rule = new CaptureRule();
+        String host = rr.httpService() != null ? rr.httpService().host()
+                : com.assessmentnotebook.analyze.UrlTemplates.host(rr.request().url());
+        rule.host = host;
+        rule.name = host;
+        if (!com.assessmentnotebook.burp.ui.CaptureRulesDialog.editRule(api, rule,
+                "New Auto-Capture Rule")) {
+            return;
+        }
+        run(() -> {
+            CaptureConfig config = session.controller().captureConfig();
+            config.rules.add(rule);
+            config.enabled = true;
+            session.controller().applyCaptureConfig(config);
+            api.logging().logToOutput("Assessment Notebook: auto-capture is ON with "
+                    + config.rules.size() + " rule(s); added \"" + rule.name + "\"");
+        });
     }
 
     private void registerVariant(HttpRequestResponse rr) {
@@ -449,13 +501,7 @@ public final class ContextMenuProvider implements ContextMenuItemsProvider {
     }
 
     private Page matchPage(HttpRequestResponse rr) {
-        NotebookController c = session.controller();
-        Page byMethod = c.project().findPageByRequest(rr.request().url(), rr.request().method());
-        if (byMethod != null) return byMethod;
-        for (Page p : c.project().pages) {
-            if (p.url.equals(rr.request().url())) return p;
-        }
-        return null;
+        return session.controller().findPageFor(rr.request().url(), rr.request().method());
     }
 
     private boolean requireProject() {

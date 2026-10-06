@@ -104,15 +104,18 @@ open the submenu, then press the letter to run it.
 | Action | Mnemonic |
 |---|---|
 | Register Page… | P |
+| Register API Endpoint… | I |
 | Register Resource… | R |
 | Register as Page Variant… | B |
 | Register Form… | F |
+| Describe Parameters (purpose / notes)… | O |
 | Add Note / Observation… | N |
 | Mark Interesting String… | M |
 | Register Element from selection… | E |
 | Test Parameter (quick probes)… | T |
 | Create Vulnerability… | V |
 | Capture Screenshot… | S |
+| Auto-Capture Rule from this Request… | U |
 | Export Wordlists | W |
 | Open Project Documentation | D |
 
@@ -173,6 +176,99 @@ form's own document, where each parameter shows its type, default, observed
 values, reflections, and any parameter tests. Links become navigational edges;
 when a link's destination is later registered as a page, a `links-to` edge
 appears automatically.
+
+**Describing parameters.** Every parameter has a **Purpose** ("what is this
+for?") and free **Notes**. Edit them in the parameter table, which opens from:
+
+- **Describe Parameters (purpose / notes)…** on a request — the forms of that
+  request's page (or every form, if the request is not registered);
+- the **Parameters…** button on the tab — every form in the project;
+- **Register Form…**, and the *Then describe the parameters* tick-box in the
+  Register dialog — straight after registering.
+
+Pick a form, type into the Purpose and Notes cells, **Save**. The *Example
+values* column shows the default plus values seen in traffic, which usually
+tells you what the field carries. **Suggest Purposes** fills the empty Purpose
+cells of the current form with a guess from the name (`csrf_token` → Anti-CSRF
+token, `orderId` → Object identifier); it is only a starting point and nothing
+is stored until you save. The window is not modal, so you can keep reading
+requests in Burp while you annotate. Purposes and notes show on the form
+document and in the parameter table of the page document, and re-registering a
+page never overwrites them.
+
+### 4.5 API endpoints (JSON / XHR) — register once
+
+A JSON call is not a page a user sees, not a static file, and has no HTML form,
+which makes "page, resource or form?" a guess. It is its own kind: an **API
+endpoint**. Use **Register API Endpoint…** (or **Register Page…** — the dialog's
+*Register as* box is preselected from the response type and request headers).
+One registration records everything the three separate ones were approximating:
+
+| What you wanted | Where it is on the endpoint document |
+|---|---|
+| the request's fields (the "form") | **Request parameters** — JSON body fields, flattened (`user.email`, `items[0].sku`), plus query parameters |
+| what it returns | **Response fields** — the field paths of the JSON response (`items[].id`), and the saved, re-indented body under **Source** |
+| which page uses it (the "resource" link) | **Called by** — taken from the request's `Referer`; the calling page lists it under **API calls** |
+| how it behaves under other conditions | **Variants** and **Dynamic differences**, with added/removed response fields named |
+
+Endpoints are marked `API` in the application tree and counted separately on
+the overview. Use **Register Resource…** only for files: scripts, styles,
+images, fonts, downloads.
+
+### 4.6 Auto-capture rules
+
+Right-clicking every request gets old quickly. **Auto-Capture…** on the tab
+holds an ordered list of rules; with the master switch on, each response from
+the tools a rule listens to (Proxy by default, optionally Repeater) is tested
+against them and registered without a dialog. It is passive: it only reads
+traffic Burp already handled and never sends a request.
+
+A rule's conditions are all optional (blank means "any"):
+
+| Condition | Example | Notes |
+|---|---|---|
+| Host | `app.example.com, *.example.com` | comma-separated globs |
+| Path | `/api/*` or `re:^/v\d+/users` | glob on the path, or a regex on path?query |
+| Methods | `GET, POST` | |
+| Response type | `json, html` | parts of the response `Content-Type` |
+| Status | `200, 3xx, 400-404` | |
+| In scope only | | uses Burp's target scope |
+
+and its **Register as** says what a match becomes: *Auto-detect* (the usual
+choice — HTML becomes a page, JSON/XML/XHR an API endpoint, scripts, styles,
+images and fonts resources), a fixed *Page* / *API endpoint* / *Resource*, or
+*Ignore*. Rules are tried top to bottom and the **first match decides**, so put
+*Ignore* rules (health checks, analytics, `/assets/*`) above the broad one.
+
+The quickest start: right-click any request to the target →
+**Auto-Capture Rule from this Request…** creates a rule for that host and
+switches capture on. **Apply to Proxy History…** in the rules dialog runs the
+rules over what you already browsed.
+
+**Nothing is registered twice.** A page is identified by method and path; the
+query string is ignored and, by default, id-like path segments (numbers, UUIDs,
+long hex) are collapsed, so `/api/users/17` and `/api/users/42?full=1` are one
+record shown as `/api/users/{id}`. When a known page is seen again the capture
+is compared on four things:
+
+- the **status code**,
+- the **names** of the request parameters (query, body, JSON),
+- whether the request carried an `Authorization` header,
+- the **structure** of the response — the set of JSON field paths, or the set
+  of HTML element paths and form-field names.
+
+If all four match something already documented, the capture is dropped (only
+new example values for its parameters are kept). If any differs, it is added as
+a **page variant** labelled with the difference — `status 200 → 403`,
+`new parameter debug`, `response structure changed` — the first capture is kept
+alongside it as the baseline, and any new forms, links, resources and response
+fields are merged into the page. Values are deliberately not compared: another
+search term, record or CSRF token is the same page. A page stops collecting
+automatic variants at the limit set in the dialog (10 by default).
+
+The tab's status line shows what auto-capture has registered and skipped this
+session. Static resources are registered by URL (one record per file, linked to
+the page that loaded it); responses over 5 MB are noted by URL only.
 
 ---
 
@@ -349,7 +445,7 @@ without Burp. It is the raw material for the report.
 See the mnemonic table in §4. The extension defines no global shortcuts and no
 menu accelerators (see the note in §4 for why). The keyboard path is: open the
 **Assessment Notebook** submenu, then press an action's underlined letter
-(P, R, B, F, N, M, E, T, V, S, W, D).
+(P, I, R, B, F, O, N, M, E, T, J, V, S, U, W, D).
 
 ---
 
@@ -474,8 +570,79 @@ open ./blind-sqli-lab-notebook/index.html
   parameters are enumerated; cookies and path segments are not probed here.
 - **Docs look stale.** Every action regenerates them; click **Refresh** or
   re-open `index.html`.
+- **Documents don't link to each other, things are listed twice or in the wrong
+  place.** Run `scripts/repair-project.sh` on the project directory (§18).
 - **Test Parameter won't run.** You must tick the authorization confirmation and
   select at least one probe.
+
+---
+
+## 18. Checking and repairing a project
+
+A project can drift out of shape: it was made by an older version, a save was
+interrupted, the directory was copied between machines, `project.json` was
+edited by hand, or the same thing was registered several ways. The symptoms are
+documents that do not link to each other, pages missing their forms, the same
+script listed twice, an API call filed as a resource. `scripts/repair-project.sh`
+checks for all of that and repairs what it can.
+
+```bash
+scripts/repair-project.sh /path/to/project            # report only: nothing is changed
+scripts/repair-project.sh /path/to/project --apply    # fix, rebuild documents, check links
+scripts/repair-project.sh /path/to/project --apply --prune
+scripts/repair-project.sh --help
+```
+
+It runs outside Burp, on the project's files, with the same model and document
+generator as the extension (it builds the jar first if needed). **Close the
+project in Burp before repairing, or re-open it right afterwards** (*New / Open
+Project…* → the same directory): the extension keeps the project in memory and
+would otherwise save its old copy over the repaired one.
+
+**It is safe to run.** The default is a dry run. With `--apply`,
+`project.json` is copied to `project.json.bak-<time>` before it is rewritten.
+Nothing you wrote is deleted: a note whose subject is gone is kept at project
+level, and a record that cannot be reconnected is reported, not removed.
+
+What it checks, and what `--apply` does about it:
+
+| Area | Problem | Repair |
+|---|---|---|
+| Model structure | empty/`null` lists and fields, unknown enum values | restored to defaults |
+| | id counter behind the ids in use (the next registration would reuse an id) | counter raised |
+| | records with no id, or two with the same id | given a fresh id |
+| | `project.json` unreadable after an interrupted save | recovered from `project.json.tmp`; the broken file is kept |
+| Dangling references | lists and fields naming records that do not exist; relationship edges to nothing | removed / cleared |
+| | notes on a record that no longer exists | moved to the project, saying what they were about |
+| Missing connections | a form, link, variant, screenshot or interaction and its page disagree about who owns it | re-attached (the page's list wins; otherwise the child's own reference, a relationship edge or, for a variant, its URL) |
+| | page ↔ resource "loads" lists out of step | brought into agreement |
+| | links whose destination is a registered page but were never resolved | connected, ignoring port, case, trailing slash and fragment |
+| | redirects, findings and API callers registered in the "wrong" order | connected from the saved responses, URLs and `Referer` headers |
+| | parameter tests not tied to their parameter | linked when the page has exactly one parameter of that name |
+| Resources | URL not in canonical form; the same file recorded twice | normalized; merged into one record with every loader |
+| | type contradicts the file extension | corrected (`.js` → JavaScript, …) |
+| | JSON/XHR page filed as an ordinary page | becomes an API endpoint (§4.5) |
+| | API call registered both as an endpoint and as a resource | resource folded into the endpoint: its loaders become callers, its notes move over |
+| Evidence files | paths from another machine (absolute, backslashes) | rewritten relative; a moved file is found again by name |
+| | references to files that are gone | dropped, so documents stop pointing at them |
+| Documents | documents for records that no longer exist, or in the wrong folder | removed; every document is regenerated |
+| | internal links that lead nowhere | reported after regeneration (there should be none) |
+
+Some things only you can decide, and are listed as **needs attention**: forms
+or parameters that belong to no page, evidence files no record refers to,
+screenshots whose image is missing, two pages registered under equivalent URLs.
+`--prune` (with `--apply`) resolves the first three: it removes unreachable
+records that carry none of your notes, purposes or tests, moves unreferenced
+files into `_orphaned/` (moved, never deleted), and drops screenshot records
+whose image is gone.
+
+`--no-reclassify` leaves page kinds and endpoint resources as they are, for a
+project where a JSON response was deliberately registered as a page.
+
+The exit status is `0` when the project is consistent, `1` when problems were
+found (dry run) or left for you (repair), and `2` when the project could not be
+read — so the check can run in a script. Every fix is stable: running the
+repair again finds nothing more to fix.
 
 ---
 
